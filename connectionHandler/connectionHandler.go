@@ -9,18 +9,18 @@ import (
 )
 
 type MsgAction struct {
-	Action string `json:"action"`
+	Action  string `json:"action"`
 	Message string `json:"message"`
-	Queue Queue  `json:"queue"`
+	Queue   Queue  `json:"queue"`
+}
+
+type QueueList struct {
+	Queues []Queue
 }
 
 type Queue struct {
 	QueueName string `json:"queueName"`
 	Paired    []net.Conn
-}
-
-type QueueList struct {
-	Queues []Queue
 }
 
 var queueList QueueList
@@ -51,8 +51,20 @@ func (q *QueueList) AddQueue(newQueue Queue) []Queue {
 	return q.Queues
 }
 
+func (q *QueueList) DestroyQueue(queueIdx int) []Queue {
+	q.Queues[queueIdx] = q.Queues[len(q.Queues)-1]
+	q.Queues = q.Queues[:len(q.Queues)-1]
+	return q.Queues
+}
+
 func (q *Queue) AddPair(conn net.Conn) []net.Conn {
 	q.Paired = append(q.Paired, conn)
+	return q.Paired
+}
+
+func (q *Queue) DestroyPair(connIdx int) []net.Conn {
+	q.Paired[connIdx] = q.Paired[len(q.Paired)-1]
+	q.Paired = q.Paired[:len(q.Paired)-1]
 	return q.Paired
 }
 
@@ -61,7 +73,7 @@ func handleRequest(conn net.Conn) {
 		scanner := bufio.NewScanner(conn)
 		for scanner.Scan() {
 			msg := scanner.Text()
-			log.Printf("Client sends: " + msg)
+			log.Println("Client sends: " + msg)
 			msgAct := new(MsgAction)
 			err := json.Unmarshal([]byte(msg), &msgAct)
 			if err != nil {
@@ -89,7 +101,7 @@ func handleRequest(conn net.Conn) {
 					writeToClient(conn, `{"error":"This queueName does not exists"}`)
 					break
 				}
-				if existPair := checkPaired(conn, queueIdx); existPair == true {
+				if existPair, _ := checkPaired(conn, queueIdx); existPair == true {
 					writeToClient(conn, `{"error":"Already paired to this queue"}`)
 					break
 				}
@@ -108,25 +120,51 @@ func handleRequest(conn net.Conn) {
 				for idx, _ := range queueList.Queues[queueIdx].Paired {
 					writeToClient(queueList.Queues[queueIdx].Paired[idx], msgAct.Message)
 				}
+
+			} else if msgAct.Action == "destroyQueue" {
+				exists, queueIdx := checkQueueName(msgAct.Queue)
+				if exists == false {
+					writeToClient(conn, `{"error":"This queueName does not exists"}`)
+					break
+				}
+				queueList.DestroyQueue(queueIdx)
+
+			} else if msgAct.Action == "destroyPair" {
+				exists, queueIdx := checkQueueName(msgAct.Queue)
+				if exists == false {
+					writeToClient(conn, `{"error":"This queueName does not exists"}`)
+					break
+				}
+				existPair, connIdx := checkPaired(conn, queueIdx)
+				if existPair == false {
+					writeToClient(conn, `{"error":"The connection is not paired to this Queue"}`)
+					break
+				}
+
+				queueList.Queues[queueIdx].DestroyPair(connIdx)
 			}
 		}
 		if errRead := scanner.Err(); errRead != nil {
-			log.Printf("Client disconnected...")
+			log.Println("Client disconnected...")
 			break
 		}
 	}
 }
 
-func checkPaired(conn net.Conn, queueIdx int) bool {
+func checkPaired(conn net.Conn, queueIdx int) (bool, int) {
 	for idx, _ := range queueList.Queues[queueIdx].Paired {
-		if conn == queueList.Queues[queueIdx].Paired[idx] {return true}
+		if conn == queueList.Queues[queueIdx].Paired[idx] {
+			return true, idx
+		}
 	}
-	return false
+	return false, -1
 }
 
 func checkQueueName(queue Queue) (bool, int) {
 	for idx, _ := range queueList.Queues {
-		if queue.QueueName == queueList.Queues[idx].QueueName {return true, idx}
+		if queue.QueueName == queueList.Queues[idx].QueueName {
+			return true, idx
+		}
 	}
 	return false, -1
 }
@@ -136,38 +174,31 @@ func copyQueueStruct(m *MsgAction, q *Queue) {
 }
 
 func checkMsgAction(m *MsgAction) string {
-	var err string = ""
+	var err string
 	if isValidAction(m.Action) == false {err = `{"error":"Invalid Action"}`}
-
-	if err == "" {
-		err = checkMsgParameters(m)
-	}
-
+	if err == "" {err = checkMsgParameters(m)}
 	return err
 }
 
 func checkMsgParameters(m *MsgAction) string {
-	var err string = ""
-
 	// `QueueName` is mandatory for every message type
-	if m.Queue.QueueName == "" {
-		err = `{"error":"Invalid queueName"}`
-	}
+	if m.Queue.QueueName == "" {return`{"error":"Invalid queueName"}`}
 
 	if m.Action == "sendMsg" {
 		if m.Message == "" {
-			err = `{"error":"Missing the 'message' param"}`
+			return `{"error":"Missing the 'message' param"}`
 		}
 	}
-
-	return err
+	return ""
 }
 
 func isValidAction(action string) bool {
 	switch action {
 	case
-		"pairToQueue",
 		"sendMsg",
+		"pairToQueue",
+		"destroyPair",
+		"destroyQueue",
 		"createQueue":
 		return true
 	}
