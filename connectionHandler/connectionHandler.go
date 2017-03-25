@@ -10,7 +10,7 @@ import (
 
 type MsgAction struct {
 	Action  string `json:"action"`
-	Message string `json:"message"`
+	Message Message `json:"message"`
 	Queue   Queue  `json:"queue"`
 }
 
@@ -21,6 +21,13 @@ type QueueList struct {
 type Queue struct {
 	QueueName string `json:"queueName"`
 	Paired    []net.Conn
+	UnconsumedMessages []Message
+}
+
+type Message struct {
+	Body string `json:"body"`
+	Timestamp string
+	Sender net.Conn
 }
 
 var queueList QueueList
@@ -60,6 +67,17 @@ func (q *QueueList) DestroyQueue(queueIdx int) []Queue {
 func (q *Queue) AddPair(conn net.Conn) []net.Conn {
 	q.Paired = append(q.Paired, conn)
 	return q.Paired
+}
+
+func (q *Queue) AddUnconsumed(message Message) []Message {
+	q.UnconsumedMessages = append(q.UnconsumedMessages, message)
+	return q.UnconsumedMessages
+}
+
+func (q *Queue) DestroyConsumed(msgIdx int) []Message {
+	q.UnconsumedMessages[msgIdx] = q.UnconsumedMessages[len(q.UnconsumedMessages)-1]
+	q.UnconsumedMessages = q.UnconsumedMessages[:len(q.UnconsumedMessages)-1]
+	return q.UnconsumedMessages
 }
 
 func (q *Queue) DestroyPair(connIdx int) []net.Conn {
@@ -109,6 +127,20 @@ func handleRequest(conn net.Conn) {
 				// adding the connection to the proper queue `Paired`
 				queueList.Queues[queueIdx].AddPair(conn)
 
+				// clear the queue sending the `UnconsumedMessages`
+				unconsumed := queueList.Queues[queueIdx].UnconsumedMessages
+				for msgIdx, _ := range unconsumed {
+					// XXX: check timestamp!
+
+					// do not send if the sender is the only one `Paired`
+					if (unconsumed[msgIdx].Sender == conn &&
+						len(queueList.Queues[queueIdx].Paired) == 1) {continue}
+
+					broadcastToQueue(queueList.Queues[queueIdx], unconsumed[msgIdx], conn)
+					// XXX: delete in order by timestamp?
+					queueList.Queues[queueIdx].DestroyConsumed(msgIdx)
+				}
+
 			} else if msgAct.Action == "sendMsg" {
 				exists, queueIdx := checkQueueName(msgAct.Queue)
 				if exists == false {
@@ -116,10 +148,13 @@ func handleRequest(conn net.Conn) {
 					break
 				}
 
-				// send the message to all the Paired connections
-				for idx, _ := range queueList.Queues[queueIdx].Paired {
-					writeToClient(queueList.Queues[queueIdx].Paired[idx], msgAct.Message)
+				msgAct.Message.Sender = conn
+
+				if len(queueList.Queues[queueIdx].Paired) <= 1 {
+					queueList.Queues[queueIdx].AddUnconsumed(msgAct.Message)
 				}
+
+				broadcastToQueue(queueList.Queues[queueIdx], msgAct.Message, conn)
 
 			} else if msgAct.Action == "destroyQueue" {
 				exists, queueIdx := checkQueueName(msgAct.Queue)
@@ -148,6 +183,14 @@ func handleRequest(conn net.Conn) {
 			log.Println("Client disconnected...")
 			break
 		}
+	}
+}
+
+func broadcastToQueue(q Queue, message Message, sender net.Conn) {
+	// send the body to all the Paired connections
+	for idx, _ := range q.Paired {
+		if message.Sender == sender {continue}
+		writeToClient(q.Paired[idx], message.Body)
 	}
 }
 
@@ -185,8 +228,8 @@ func checkMsgParameters(m *MsgAction) string {
 	if m.Queue.QueueName == "" {return`{"error":"Invalid queueName"}`}
 
 	if m.Action == "sendMsg" {
-		if m.Message == "" {
-			return `{"error":"Missing the 'message' param"}`
+		if m.Message.Body == "" {
+			return `{"error":"Missing the 'body' param"}`
 		}
 	}
 	return ""
