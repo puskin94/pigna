@@ -9,9 +9,9 @@ import (
 )
 
 type MsgAction struct {
-	Action  string `json:"action"`
+	Action  string  `json:"action"`
 	Message Message `json:"message"`
-	Queue   Queue  `json:"queue"`
+	Queue   Queue   `json:"queue"`
 }
 
 type QueueList struct {
@@ -19,15 +19,15 @@ type QueueList struct {
 }
 
 type Queue struct {
-	QueueName			string `json:"queueName"`
-	Consumers			[]net.Conn
-	UnconsumedMessages	[]Message
+	QueueName          string `json:"queueName"`
+	Consumers          []net.Conn
+	UnconsumedMessages []Message
 }
 
 type Message struct {
-	Body		string `json:"body"`
-	Timestamp	string
-	Sender		net.Conn
+	Body      string `json:"body"`
+	Timestamp string
+	Sender    net.Conn
 }
 
 var queueList QueueList
@@ -87,112 +87,127 @@ func (q *Queue) DeleteConsumer(connIdx int) []net.Conn {
 }
 
 func handleRequest(conn net.Conn) {
-	for {
-		scanner := bufio.NewScanner(conn)
-		for scanner.Scan() {
-			msg := scanner.Text()
-			log.Println("Client sends: " + msg)
-			msgAct := new(MsgAction)
-			err := json.Unmarshal([]byte(msg), &msgAct)
-			if err != nil {
-				writeToClient(conn, `{"responseType": "error", "responseText": "Invalid JSON request"}`)
-				break
-			}
-			errMsgAction := checkMsgAction(msgAct)
-			if errMsgAction != "" {
-				writeToClient(conn, errMsgAction)
-				break
-			}
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		msg := scanner.Text()
+		log.Println("Client sends: " + msg)
 
-			if msgAct.Action == "createQueue" {
-				if exists, _ := checkQueueName(msgAct.Queue); exists == true {
-					writeToClient(conn, `{"responseType": "error", "responseText": "This queueName already exists"}`)
-					break
-				}
-				var newQueue Queue
-				copyQueueStruct(msgAct, &newQueue)
-				queueList.AddQueue(newQueue)
-				writeToClient(conn, `{"responseType": "success", "responseText": "Queue created successfully"}`)
-
-			} else if msgAct.Action == "consumeQueue" {
-				exists, queueIdx := checkQueueName(msgAct.Queue)
-				if exists == false {
-					writeToClient(conn, `{"responseType": "error", "responseText": "This queueName does not exists"}`)
-					break
-				}
-				alreadyConsuming, _ := checkConsumers(conn, queueIdx)
-				if alreadyConsuming == true {
-					writeToClient(conn, `{"responseType": "error", "responseText": "Already consuming this queue"}`)
-					break
-				}
-
-				// adding the connection to the proper queue `Consumers`
-				queueList.Queues[queueIdx].AddConsumer(conn)
-
-				// clear the queue sending the `UnconsumedMessages`
-				unconsumed := queueList.Queues[queueIdx].UnconsumedMessages
-				for msgIdx, _ := range unconsumed {
-					// XXX: check timestamp!
-
-					// do not send if the sender is the only one `Consumers`
-					if (unconsumed[msgIdx].Sender == conn &&
-						len(queueList.Queues[queueIdx].Consumers) == 1) {continue}
-
-					go broadcastToQueue(queueList.Queues[queueIdx], unconsumed[msgIdx], conn)
-					// XXX: delete in order by timestamp?
-					queueList.Queues[queueIdx].DestroyConsumedMessage(msgIdx)
-				}
-
-			} else if msgAct.Action == "sendMsg" {
-				exists, queueIdx := checkQueueName(msgAct.Queue)
-				if exists == false {
-					writeToClient(conn, `{"responseType": "error", "responseText": "This queueName does not exists"}`)
-					break
-				}
-
-				msgAct.Message.Sender = conn
-
-				if len(queueList.Queues[queueIdx].Consumers) <= 1 {
-					queueList.Queues[queueIdx].AddUnconsumedMessage(msgAct.Message)
-				}
-
-				go broadcastToQueue(queueList.Queues[queueIdx], msgAct.Message, conn)
-
-			} else if msgAct.Action == "destroyQueue" {
-				exists, queueIdx := checkQueueName(msgAct.Queue)
-				if exists == false {
-					writeToClient(conn, `{"responseType": "error", "responseText": "This queueName does not exists"}`)
-					break
-				}
-				queueList.DestroyQueue(queueIdx)
-
-			} else if msgAct.Action == "removeConsumer" {
-				exists, queueIdx := checkQueueName(msgAct.Queue)
-				if exists == false {
-					writeToClient(conn, `{"responseType": "error", "responseText": "This queueName does not exists"}`)
-					break
-				}
-				alreadyConsuming, connIdx := checkConsumers(conn, queueIdx)
-				if alreadyConsuming == false {
-					writeToClient(conn, `{"responseType": "error", "responseText": "You are not consuming this Queue"}`)
-					break
-				}
-
-				queueList.Queues[queueIdx].DeleteConsumer(connIdx)
-			}
+		msgAct := new(MsgAction)
+		err := json.Unmarshal([]byte(msg), &msgAct)
+		if err != nil {
+			writeMessage(conn, "error", "Invalid JSON request")
+			return
 		}
-		if errRead := scanner.Err(); errRead != nil {
-			log.Println("Client disconnected...")
-			break
+
+		errAction, resType, resText := checkMsgAction(msgAct)
+		if errAction {
+			writeMessage(conn, resType, resText)
+			return
 		}
+
+		if msgAct.Action == "createQueue" {
+			if exists, _ := checkQueueName(msgAct.Queue); exists == true {
+				writeMessage(conn, "error", "This queueName already exists")
+				return
+			}
+			var newQueue Queue
+			copyQueueStruct(msgAct, &newQueue)
+			queueList.AddQueue(newQueue)
+			writeMessage(conn, "success", "Queue " + msgAct.Queue.QueueName +
+				" created successfully")
+
+		} else if msgAct.Action == "consumeQueue" {
+			exists, queueIdx := checkQueueName(msgAct.Queue)
+			if !exists {
+				writeMessage(conn, "error", "This queueName does not exists")
+				return
+			}
+			alreadyConsuming, _ := checkConsumers(conn, queueIdx)
+			if alreadyConsuming {
+				writeMessage(conn, "error", "Already consuming this queue")
+				return
+			}
+
+			// adding the connection to the proper queue `Consumers`
+			queueList.Queues[queueIdx].AddConsumer(conn)
+
+			writeMessage(conn, "success", "Consuming from the queue " +
+				msgAct.Queue.QueueName)
+
+			// clear the queue sending the `UnconsumedMessages`
+			unconsumed := queueList.Queues[queueIdx].UnconsumedMessages
+			for msgIdx, _ := range unconsumed {
+				// XXX: check timestamp!
+
+				// do not send if the sender is the only one `Consumers`
+				if unconsumed[msgIdx].Sender == conn &&
+					len(queueList.Queues[queueIdx].Consumers) == 1 {
+					continue
+				}
+
+				go broadcastToQueue(queueList.Queues[queueIdx],
+					unconsumed[msgIdx], conn)
+				// XXX: delete in order by timestamp?
+				queueList.Queues[queueIdx].DestroyConsumedMessage(msgIdx)
+			}
+
+		} else if msgAct.Action == "sendMsg" {
+			exists, queueIdx := checkQueueName(msgAct.Queue)
+			if !exists {
+				writeMessage(conn, "error", "This queueName does not exists")
+				return
+			}
+
+			msgAct.Message.Sender = conn
+
+			if len(queueList.Queues[queueIdx].Consumers) <= 1 {
+				queueList.Queues[queueIdx].AddUnconsumedMessage(msgAct.Message)
+			}
+
+			go broadcastToQueue(queueList.Queues[queueIdx],
+				msgAct.Message, conn)
+
+		} else if msgAct.Action == "destroyQueue" {
+			exists, queueIdx := checkQueueName(msgAct.Queue)
+			if !exists {
+				writeMessage(conn, "error", "This queueName does not exists")
+				return
+			}
+			queueList.DestroyQueue(queueIdx)
+
+			writeMessage(conn, "success", "Queue " + msgAct.Queue.QueueName +
+				" destroyed")
+
+		} else if msgAct.Action == "removeConsumer" {
+			exists, queueIdx := checkQueueName(msgAct.Queue)
+			if !exists {
+				writeMessage(conn, "error", "This queueName does not exists")
+				return
+			}
+			alreadyConsuming, connIdx := checkConsumers(conn, queueIdx)
+			if !alreadyConsuming {
+				writeMessage(conn, "error", "You are not consuming this Queue")
+				return
+			}
+
+			queueList.Queues[queueIdx].DeleteConsumer(connIdx)
+
+			writeMessage(conn, "success", "You are not consuming anymore")
+		}
+	}
+	if errRead := scanner.Err(); errRead != nil {
+		log.Println("Client disconnected...")
+		return
 	}
 }
 
 func broadcastToQueue(q Queue, message Message, sender net.Conn) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
-		if message.Sender == sender {continue}
-		writeToClient(q.Consumers[idx], message.Body)
+		if message.Sender == sender {
+			continue
+		}
+		sendToClient(q.Consumers[idx], message.Body)
 	}
 }
 
@@ -218,23 +233,37 @@ func copyQueueStruct(m *MsgAction, q *Queue) {
 	q.QueueName = m.Queue.QueueName
 }
 
-func checkMsgAction(m *MsgAction) string {
-	var err string
-	if isValidAction(m.Action) == false {err = `{"responseType": "error", "responseText": "Invalid Action"}`}
-	if err == "" {err = checkMsgParameters(m)}
-	return err
+func checkMsgAction(m *MsgAction) (bool, string, string) {
+	var err bool = false
+	var resText string = ""
+
+	if isValidAction(m.Action) == false {
+		err = true
+		resText = "Invalid Action"
+	}
+	if !err {
+		err, _, resText = checkMsgParameters(m)
+	}
+	return err, "error", resText
 }
 
-func checkMsgParameters(m *MsgAction) string {
+func checkMsgParameters(m *MsgAction) (bool, string, string) {
+	var err bool = false
+	var resText string = ""
+
 	// `QueueName` is mandatory for every message type
-	if m.Queue.QueueName == "" {return`{"responseType": "error", "responseText": "Invalid queueName"}`}
+	if m.Queue.QueueName == "" {
+		err = true
+		resText = "Invalid queueName"
+	}
 
 	if m.Action == "sendMsg" {
 		if m.Message.Body == "" {
-			return `{"responseType": "error", "responseText": "Missing the 'body' param"}`
+			err = true
+			resText = "Missing the 'body' param"
 		}
 	}
-	return ""
+	return err, "error", resText
 }
 
 func isValidAction(action string) bool {
@@ -250,6 +279,11 @@ func isValidAction(action string) bool {
 	return false
 }
 
-func writeToClient(conn net.Conn, message string) {
+func writeMessage(conn net.Conn, messageType string, message string) {
+	sendToClient(conn, `{"responseType": "`+messageType+
+		`", "responseText": "`+message+`"}`)
+}
+
+func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
 }

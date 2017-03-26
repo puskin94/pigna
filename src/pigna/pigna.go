@@ -31,7 +31,47 @@ func(pignaConn PignaConnection) CreateQueue(queueName string) (Response, error) 
 	createQueue := `{"action":"createQueue","queue":{"queueName":"` +
 					queueName + `"}}`
 	writeToClient(pignaConn.Connection, createQueue)
+	res, err := waitForResponse(pignaConn)
+	return res, err
+}
 
+func(pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error) {
+	createQueue := `{"action":"destroyQueue","queue":{"queueName":"` +
+					queueName + `"}}`
+	writeToClient(pignaConn.Connection, createQueue)
+	res, err := waitForResponse(pignaConn)
+	return res, err
+}
+
+func(pignaConn PignaConnection) ConsumeQueue(queueName string) (Response, error) {
+	createQueue := `{"action":"consumeQueue","queue":{"queueName":"` +
+					queueName + `"}}`
+	writeToClient(pignaConn.Connection, createQueue)
+	res, err := waitForResponse(pignaConn)
+
+	// XXX: start a listening goroutine unless `RemoveConsumer`
+
+	return res, err
+}
+
+func(pignaConn PignaConnection) RemoveConsumer(queueName string) (Response, error) {
+	createQueue := `{"action":"removeConsumer","queue":{"queueName":"` +
+					queueName + `"}}`
+	writeToClient(pignaConn.Connection, createQueue)
+	res, err := waitForResponse(pignaConn)
+	return res, err
+}
+
+// XXX: add the timestamp to the message!
+func(pignaConn PignaConnection) SendMsg(queueName string, message string) {
+	createQueue := `{"action":"sendMsg","queue":{"queueName":"` +
+					queueName + `"}, "message": {"body": "`+ message + `"}}`
+	writeToClient(pignaConn.Connection, createQueue)
+	// res, err := waitForResponse(pignaConn)
+	// return res, err
+}
+
+func waitForResponse(pignaConn PignaConnection) (Response, error) {
 	var response Response
 	message, _ := bufio.NewReader(pignaConn.Connection).ReadString('\n')
 	err := json.Unmarshal([]byte(message), &response)
