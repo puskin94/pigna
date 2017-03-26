@@ -14,7 +14,7 @@ const (
 )
 
 func main() {
-	log.Println("Welcome to " + swName + " v. " + swVersion) 
+	log.Println("Welcome to " + swName + " v. " + swVersion)
 	log.Println("Starting daemon on port", port )
 	connectionHandler.StartServer(host, port)
 }
