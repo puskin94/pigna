@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"sort"
+	"sync"
 )
 
 type MsgAction struct {
@@ -22,13 +24,22 @@ type Queue struct {
 	QueueName          string `json:"queueName"`
 	Consumers          []net.Conn
 	UnconsumedMessages []Message
+	MutexCounter       sync.Mutex
+	MsgCounter         int
 }
 
 type Message struct {
 	Body      string `json:"body"`
-	Timestamp string
+	Timestamp string `json:"timestamp"`
 	Sender    net.Conn
+	MsgId     int
 }
+
+type MessageSorter []Message
+
+func (a MessageSorter) Len() int           { return len(a) }
+func (a MessageSorter) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a MessageSorter) Less(i, j int) bool { return a[i].MsgId < a[j].MsgId }
 
 var queueList QueueList
 
@@ -74,12 +85,6 @@ func (q *Queue) AddUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func (q *Queue) DestroyConsumedMessage(msgIdx int) []Message {
-	q.UnconsumedMessages[msgIdx] = q.UnconsumedMessages[len(q.UnconsumedMessages)-1]
-	q.UnconsumedMessages = q.UnconsumedMessages[:len(q.UnconsumedMessages)-1]
-	return q.UnconsumedMessages
-}
-
 func (q *Queue) DeleteConsumer(connIdx int) []net.Conn {
 	q.Consumers[connIdx] = q.Consumers[len(q.Consumers)-1]
 	q.Consumers = q.Consumers[:len(q.Consumers)-1]
@@ -111,9 +116,10 @@ func handleRequest(conn net.Conn) {
 				return
 			}
 			var newQueue Queue
+			newQueue.MsgCounter = 0
 			copyQueueStruct(msgAct, &newQueue)
 			queueList.AddQueue(newQueue)
-			writeMessage(conn, "success", "Queue " + msgAct.Queue.QueueName +
+			writeMessage(conn, "success", "Queue "+msgAct.Queue.QueueName+
 				" created successfully")
 
 		} else if msgAct.Action == "consumeQueue" {
@@ -131,25 +137,22 @@ func handleRequest(conn net.Conn) {
 			// adding the connection to the proper queue `Consumers`
 			queueList.Queues[queueIdx].AddConsumer(conn)
 
-			writeMessage(conn, "success", "Consuming from the queue " +
-				msgAct.Queue.QueueName)
+			unconsumed := queueList.Queues[queueIdx].UnconsumedMessages
+			sort.Sort(MessageSorter(unconsumed))
 
 			// clear the queue sending the `UnconsumedMessages`
-			unconsumed := queueList.Queues[queueIdx].UnconsumedMessages
-			for msgIdx, _ := range unconsumed {
-				// XXX: check timestamp!
+			go func() {
+				for msgIdx, _ := range unconsumed {
+					// do not send if the sender is the only one `Consumers`
+					if unconsumed[msgIdx].Sender == conn &&
+						len(queueList.Queues[queueIdx].Consumers) == 1 {
+						continue
+					}
 
-				// do not send if the sender is the only one `Consumers`
-				if unconsumed[msgIdx].Sender == conn &&
-					len(queueList.Queues[queueIdx].Consumers) == 1 {
-					continue
+					broadcastToQueue(queueList.Queues[queueIdx], unconsumed[msgIdx], conn)
+					queueList.Queues[queueIdx].UnconsumedMessages = queueList.Queues[queueIdx].UnconsumedMessages[1:]
 				}
-
-				go broadcastToQueue(queueList.Queues[queueIdx],
-					unconsumed[msgIdx], conn)
-				// XXX: delete in order by timestamp?
-				queueList.Queues[queueIdx].DestroyConsumedMessage(msgIdx)
-			}
+			}()
 
 		} else if msgAct.Action == "sendMsg" {
 			exists, queueIdx := checkQueueName(msgAct.Queue)
@@ -159,14 +162,17 @@ func handleRequest(conn net.Conn) {
 			}
 
 			msgAct.Message.Sender = conn
+			queueList.Queues[queueIdx].MutexCounter.Lock()
+			queueList.Queues[queueIdx].MsgCounter++
+			msgAct.Message.MsgId = queueList.Queues[queueIdx].MsgCounter
+			queueList.Queues[queueIdx].MutexCounter.Unlock()
 
 			if len(queueList.Queues[queueIdx].Consumers) <= 1 {
 				queueList.Queues[queueIdx].AddUnconsumedMessage(msgAct.Message)
+			} else {
+				go broadcastToQueue(queueList.Queues[queueIdx],
+					msgAct.Message, conn)
 			}
-
-			go broadcastToQueue(queueList.Queues[queueIdx],
-				msgAct.Message, conn)
-
 		} else if msgAct.Action == "destroyQueue" {
 			exists, queueIdx := checkQueueName(msgAct.Queue)
 			if !exists {
@@ -175,7 +181,7 @@ func handleRequest(conn net.Conn) {
 			}
 			queueList.DestroyQueue(queueIdx)
 
-			writeMessage(conn, "success", "Queue " + msgAct.Queue.QueueName +
+			writeMessage(conn, "success", "Queue "+msgAct.Queue.QueueName+
 				" destroyed")
 
 		} else if msgAct.Action == "removeConsumer" {
@@ -207,7 +213,8 @@ func broadcastToQueue(q Queue, message Message, sender net.Conn) {
 		if message.Sender == sender {
 			continue
 		}
-		sendToClient(q.Consumers[idx], message.Body)
+		msg := `{"responseType":"recvMsg", "queueName":"` + q.QueueName + `","responseText": "` + message.Body + `"}`
+		sendToClient(q.Consumers[idx], msg)
 	}
 }
 
@@ -286,4 +293,5 @@ func writeMessage(conn net.Conn, messageType string, message string) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
+	log.Println(message)
 }
