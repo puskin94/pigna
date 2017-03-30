@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"time"
 )
 
 type MsgAction struct {
@@ -138,10 +139,10 @@ func handleRequest(conn net.Conn) {
 			queueList.Queues[queueIdx].AddConsumer(conn)
 
 			unconsumed := queueList.Queues[queueIdx].UnconsumedMessages
-			sort.Sort(MessageSorter(unconsumed))
 
 			// clear the queue sending the `UnconsumedMessages`
 			go func() {
+				sort.Sort(MessageSorter(unconsumed))
 				for msgIdx, _ := range unconsumed {
 					// do not send if the sender is the only one `Consumers`
 					if unconsumed[msgIdx].Sender == conn &&
@@ -294,4 +295,5 @@ func writeMessage(conn net.Conn, messageType string, message string) {
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
 	log.Println(message)
+	time.Sleep(1 * time.Millisecond)
 }

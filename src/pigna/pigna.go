@@ -89,7 +89,7 @@ func consume(pignaConn PignaConnection, callback func(Response)) {
 		if err != nil {
 			log.Println(err.Error())
 		}
-		// log.Println(message)
+		log.Println(message)
 		_ = json.Unmarshal([]byte(message), &response)
 		callback(response)
 	}
