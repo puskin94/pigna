@@ -124,10 +124,6 @@ func handleRequest(conn net.Conn) {
 			actionRemoveConsumer(conn, *msgAct)
 		}
 	}
-	if errRead := scanner.Err(); errRead != nil {
-		log.Println("Client disconnected...")
-		return
-	}
 }
 
 func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {

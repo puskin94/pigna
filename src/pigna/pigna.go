@@ -90,7 +90,8 @@ func consume(pignaConn PignaConnection, callback func(Response)) {
 		var response Response
 		message, err := bufio.NewReader(pignaConn.Connection).ReadString('\n')
 		if err != nil {
-			log.Println(err.Error())
+			log.Println("Connection closed by the server. Shutting down")
+			break
 		}
 		_ = json.Unmarshal([]byte(message), &response)
 		callback(response)
