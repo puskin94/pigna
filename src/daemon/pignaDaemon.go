@@ -9,7 +9,7 @@ import (
 const (
 	swName = "goQue"
 	swVersion = "0.0.1"
-	host = "localhost"
+	host = "192.168.1.7"
 	port = "16789"
 )
 

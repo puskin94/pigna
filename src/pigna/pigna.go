@@ -6,22 +6,34 @@ import (
 	"bufio"
 	"log"
 	"time"
+	"io/ioutil"
 	"encoding/json"
 )
 
 type PignaConnection struct {
 	Connection net.Conn
+	SenderName string `json:"senderName"`
 	IsConsuming bool
 }
 
 type Response struct {
 	ResponseType string `json:"responseType"`
 	ResponseText string `json:"responseText"`
+	SenderName string `json:"senderName"`
 	QueueName string `json:"queueName"`
 }
 
-func Connect(host string, port string) (PignaConnection, error) {
+func Connect(host string, port string, filename string) (PignaConnection, error) {
 	var pignaConn PignaConnection
+
+	// read the config file
+	raw, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return pignaConn, err
+	}
+
+	json.Unmarshal(raw, &pignaConn)
+
 	conn, err := net.Dial("tcp", host + ":" + port)
 	pignaConn.Connection = conn
 	pignaConn.IsConsuming = false
@@ -37,15 +49,26 @@ func(pignaConn PignaConnection) Disconnect() {
 }
 
 func(pignaConn PignaConnection) CheckQueueName(queueName string) (Response, error) {
-	checkQueueName := `{"action":"checkQueueName","queue":{"queueName":"` +
+	checkQueueName := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"checkQueueName","queue":{"queueName":"` +
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, checkQueueName)
 	res, err := waitForResponse(pignaConn)
 	return res, err
 }
 
+func(pignaConn PignaConnection) GetNumberOfPaired(queueName string) (Response, error) {
+	getNumber := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"getNumberOfPaired","queue":{"queueName":"` +
+		queueName + `"}}`
+	writeToClient(pignaConn.Connection, getNumber)
+	res, err := waitForResponse(pignaConn)
+	return res, err
+}
+
 func(pignaConn PignaConnection) CreateQueue(queueName string) (Response, error) {
-	createQueue := `{"action":"createQueue","queue":{"queueName":"` +
+	createQueue := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"createQueue","queue":{"queueName":"` +
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, createQueue)
 	res, err := waitForResponse(pignaConn)
@@ -53,7 +76,8 @@ func(pignaConn PignaConnection) CreateQueue(queueName string) (Response, error) 
 }
 
 func(pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error) {
-	destroyQueue := `{"action":"destroyQueue","queue":{"queueName":"` +
+	destroyQueue := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"destroyQueue","queue":{"queueName":"` +
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, destroyQueue)
 	res, err := waitForResponse(pignaConn)
@@ -61,7 +85,8 @@ func(pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error)
 }
 
 func(pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(Response)) {
-	consumeQueue := `{"action":"consumeQueue","queue":{"queueName":"` +
+	consumeQueue := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"consumeQueue","queue":{"queueName":"` +
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, consumeQueue)
 
@@ -70,7 +95,8 @@ func(pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(Re
 }
 
 func(pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, error) {
-	removeConsumer := `{"action":"removeConsumer","queue":{"queueName":"` +
+	removeConsumer := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"removeConsumer","queue":{"queueName":"` +
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, removeConsumer)
 	res, err := waitForResponse(*pignaConn)
@@ -80,7 +106,8 @@ func(pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, err
 }
 
 func(pignaConn PignaConnection) SendMsg(queueName string, message string) {
-	sendMsg := `{"action":"sendMsg","queue":{"queueName":"` +
+	sendMsg := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"sendMsg","queue":{"queueName":"` +
 		queueName + `"}, "message": {"body": "`+ message + `"}}`
 	writeToClient(pignaConn.Connection, sendMsg)
 }

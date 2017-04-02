@@ -16,6 +16,7 @@ type MsgAction struct {
 	Action  string  `json:"action"`
 	Message Message `json:"message"`
 	Queue   Queue   `json:"queue"`
+	SenderName string `json:"senderName"`
 }
 
 type QueueList struct {
@@ -24,17 +25,22 @@ type QueueList struct {
 
 type Queue struct {
 	QueueName          string `json:"queueName"`
-	Consumers          []net.Conn
+	Consumers          []Client
 	UnconsumedMessages []Message
 	MutexCounter       sync.Mutex
 	MsgCounter         int
 }
 
+type Client struct {
+	Connection	net.Conn
+	Name		string
+}
+
 type Message struct {
-	Body      string `json:"body"`
-	// Timestamp string `json:"timestamp"`
-	Sender    net.Conn
-	MsgId     int
+	Body		string `json:"body"`
+	SenderConn	net.Conn
+	SenderName	string
+	MsgId     	int
 }
 
 type MessageSorter []Message
@@ -77,8 +83,11 @@ func (q *QueueList) destroyQueue(queueIdx int) []Queue {
 	return q.Queues
 }
 
-func (q *Queue) addConsumer(conn net.Conn) []net.Conn {
-	q.Consumers = append(q.Consumers, conn)
+func (q *Queue) addConsumer(conn net.Conn, senderName string) []Client {
+	var c Client
+	c.Connection = conn
+	c.Name = senderName
+	q.Consumers = append(q.Consumers, c)
 	return q.Consumers
 }
 
@@ -87,8 +96,8 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func (q *Queue) deleteConsumer(connIdx int) []net.Conn {
-	q.Consumers[connIdx] = q.Consumers[len(q.Consumers)-1]
+func (q *Queue) deleteConsumer(clIdx int) []Client {
+	q.Consumers[clIdx] = q.Consumers[len(q.Consumers)-1]
 	q.Consumers = q.Consumers[:len(q.Consumers)-1]
 	return q.Consumers
 }
@@ -116,6 +125,8 @@ func handleRequest(conn net.Conn) {
 			writeMessage(conn, "success", strconv.FormatBool(exists))
 		} else if msgAct.Action == "consumeQueue" {
 			actionConsumeQueue(conn, *msgAct)
+		} else if msgAct.Action == "getNumberOfPaired" {
+			actionGetNumberOfPaired(conn, *msgAct)
 		} else if msgAct.Action == "sendMsg" {
 			actionSendMsg(conn, *msgAct)
 		} else if msgAct.Action == "destroyQueue" {
@@ -124,6 +135,15 @@ func handleRequest(conn net.Conn) {
 			actionRemoveConsumer(conn, *msgAct)
 		}
 	}
+}
+
+func actionGetNumberOfPaired(conn net.Conn, msgAct MsgAction) {
+	exists, queueIdx := checkQueueName(msgAct.Queue)
+	if !exists {
+		writeMessage(conn, "error", "This queueName does not exists")
+		return
+	}
+	writeMessage(conn, "success", strconv.Itoa(len(queueList.Queues[queueIdx].Consumers)))
 }
 
 func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {
@@ -163,7 +183,9 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 		return
 	}
 
-	msgAct.Message.Sender = conn
+	msgAct.Message.SenderConn = conn
+	msgAct.Message.SenderName = msgAct.SenderName
+
 	queueList.Queues[queueIdx].MutexCounter.Lock()
 	queueList.Queues[queueIdx].MsgCounter++
 	msgAct.Message.MsgId = queueList.Queues[queueIdx].MsgCounter
@@ -204,7 +226,7 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	}
 
 	// adding the connection to the proper queue `Consumers`
-	queueList.Queues[queueIdx].addConsumer(conn)
+	queueList.Queues[queueIdx].addConsumer(conn, msgAct.SenderName)
 
 	sort.Sort(MessageSorter(queueList.Queues[queueIdx].UnconsumedMessages))
 	// clear the queue sending the `UnconsumedMessages`
@@ -212,7 +234,7 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 		// if len(queueList.Queues[queueIdx].UnconsumedMessages) == 0 { return }
 
 		// // do not send if the sender is the only one `Consumers`
-		// if unconsumed[msgIdx].Sender == conn &&
+		// if unconsumed[msgIdx].SenderConn == conn &&
 		// 	len(queueList.Queues[queueIdx].Consumers) == 1 {
 		// 	continue
 		// }
@@ -227,18 +249,19 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 func broadcastToQueue(q Queue, message Message, sender net.Conn) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
-		// if message.Sender == sender {
+		// if message.SenderConn == sender {
 		// 	continue
 		// }
 		msg := `{"responseType":"recvMsg", "queueName":"` + q.QueueName +
-			`","responseText": "` + message.Body + `"}`
-		sendToClient(q.Consumers[idx], msg)
+			`","responseText": "` + message.Body + `", "senderName": "` +
+			message.SenderName + `"}`
+		sendToClient(q.Consumers[idx].Connection, msg)
 	}
 }
 
 func checkConsumers(conn net.Conn, queueIdx int) (bool, int) {
 	for idx, _ := range queueList.Queues[queueIdx].Consumers {
-		if conn == queueList.Queues[queueIdx].Consumers[idx] {
+		if conn == queueList.Queues[queueIdx].Consumers[idx].Connection {
 			return true, idx
 		}
 	}
@@ -294,6 +317,7 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 func isValidAction(action string) bool {
 	switch action {
 	case
+		"getNumberOfPaired",
 		"checkQueueName",
 		"sendMsg",
 		"consumeQueue",
