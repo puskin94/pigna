@@ -158,10 +158,10 @@ func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
 	}
 	var names []string
 	var msg string
-	for _, name := range queueList.Queues[queueIdx].Consumers {
-		names = append(names, name.Name)
+	for _, client := range queueList.Queues[queueIdx].Consumers {
+		names = append(names, client.Name)
 	}
-	if len(names) > 0 {
+	if len(names) == 0 {
 		msg = ""
 	} else {
 		msg = strings.Join(names, ",")
@@ -371,5 +371,5 @@ func writeMessage(conn net.Conn, messageType string, message string) {
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
 	log.Println(message)
-	time.Sleep(1 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 }
