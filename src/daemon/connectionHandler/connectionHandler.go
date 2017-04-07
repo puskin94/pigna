@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"fmt"
 	"net"
 	"os"
 	"sort"
@@ -27,8 +28,10 @@ type QueueList struct {
 
 type Queue struct {
 	QueueName          string `json:"queueName"`
+	NeedsAck           bool   `json:"needsAck"`
 	Consumers          []Client
 	UnconsumedMessages []Message
+	UnackedMessages    []Message
 	MutexCounter       sync.Mutex
 	MsgCounter         int
 }
@@ -39,10 +42,10 @@ type Client struct {
 }
 
 type Message struct {
-	Body       string `json:"body"`
-	SenderConn net.Conn
-	SenderName string
-	MsgId      int
+	Body        string `json:"body"`
+	MsgId       int    `json:"msgId"`
+	SenderConn  net.Conn
+	SenderName  string
 }
 
 type MessageSorter []Message
@@ -113,7 +116,7 @@ func handleRequest(conn net.Conn) {
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
 		if err != nil {
-			writeMessage(conn, "error", "Invalid JSON request")
+			writeMessage(conn, "error", "Invalid JSON request. " + err.Error())
 			return
 		}
 
@@ -142,12 +145,32 @@ func handleRequest(conn net.Conn) {
 			actionGetNumberOfPaired(conn, *msgAct)
 		} else if msgAct.Action == "sendMsg" {
 			actionSendMsg(conn, *msgAct)
+		} else if msgAct.Action == "msgAck" {
+			actionAckMessage(conn, *msgAct)
 		} else if msgAct.Action == "destroyQueue" {
 			actionDestroyQueue(conn, *msgAct)
 		} else if msgAct.Action == "removeConsumer" {
 			actionRemoveConsumer(conn, *msgAct)
 		}
 	}
+}
+
+func actionAckMessage(conn net.Conn, msgAct MsgAction) {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
+		writeMessage(conn, "error", "This queueName does not exists")
+		return
+	}
+
+	if !queueList.Queues[queueIdx].NeedsAck { return }
+	for msgIdx, msg := range queueList.Queues[queueIdx].UnackedMessages {
+		if msg.MsgId == msgAct.Message.MsgId {
+			queueList.Queues[queueIdx].UnackedMessages =
+				append(queueList.Queues[queueIdx].UnackedMessages[:msgIdx],
+					queueList.Queues[queueIdx].UnackedMessages[msgIdx+1:]...)
+		}
+	}
+	log.Println("Need to ack ", len(queueList.Queues[queueIdx].UnackedMessages))
 }
 
 func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
@@ -228,7 +251,7 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 		queueList.Queues[queueIdx].addUnconsumedMessage(msgAct.Message)
 	} else {
 		broadcastToQueue(queueList.Queues[queueIdx],
-			msgAct.Message, conn)
+			msgAct.Message)
 	}
 }
 
@@ -240,6 +263,7 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 	}
 	var newQueue Queue
 	newQueue.MsgCounter = 0
+	newQueue.NeedsAck = false
 	copyQueueStruct(&msgAct, &newQueue)
 	queueList.addQueue(newQueue)
 	writeMessage(conn, "success", "Queue "+msgAct.Queue.QueueName+
@@ -264,31 +288,25 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	sort.Sort(MessageSorter(queueList.Queues[queueIdx].UnconsumedMessages))
 	// clear the queue sending the `UnconsumedMessages`
 	for _, _ = range queueList.Queues[queueIdx].UnconsumedMessages {
-		// if len(queueList.Queues[queueIdx].UnconsumedMessages) == 0 { return }
-
-		// // do not send if the sender is the only one `Consumers`
-		// if unconsumed[msgIdx].SenderConn == conn &&
-		// 	len(queueList.Queues[queueIdx].Consumers) == 1 {
-		// 	continue
-		// }
-
 		broadcastToQueue(queueList.Queues[queueIdx],
-			queueList.Queues[queueIdx].UnconsumedMessages[0], conn)
+			queueList.Queues[queueIdx].UnconsumedMessages[0])
 		queueList.Queues[queueIdx].UnconsumedMessages =
 			queueList.Queues[queueIdx].UnconsumedMessages[1:]
 	}
 }
 
-func broadcastToQueue(q Queue, message Message, sender net.Conn) {
+func broadcastToQueue(q Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
-		// if message.SenderConn == sender {
-		// 	continue
-		// }
-		msg := `{"responseType":"recvMsg", "queueName":"` + q.QueueName +
-			`","responseText": "` + message.Body + `", "senderName": "` +
-			message.SenderName + `"}`
+		msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", ` +
+			`"responseText": "%s", "senderName": "%s", "msgId": %d}`,
+			q.QueueName, message.Body, message.SenderName, message.MsgId)
+
 		sendToClient(q.Consumers[idx].Connection, msg)
+
+		if q.NeedsAck {
+			q.UnackedMessages = append(q.UnackedMessages, message)
+		}
 	}
 }
 
@@ -312,6 +330,7 @@ func checkQueueName(queue Queue) (int, error) {
 
 func copyQueueStruct(m *MsgAction, q *Queue) {
 	q.QueueName = m.Queue.QueueName
+	q.NeedsAck = m.Queue.NeedsAck
 }
 
 func checkMsgAction(m *MsgAction) (bool, string, string) {
@@ -344,6 +363,7 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 			resText = "Missing the 'body' param"
 		}
 	}
+
 	return err, "error", resText
 }
 
@@ -354,6 +374,7 @@ func isValidAction(action string) bool {
 		"getNumberOfPaired",
 		"checkQueueName",
 		"sendMsg",
+		"msgAck",
 		"consumeQueue",
 		"removeConsumer",
 		"destroyQueue",
