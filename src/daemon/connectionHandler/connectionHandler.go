@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"errors"
 	"strconv"
 	"time"
 )
@@ -121,8 +122,14 @@ func handleRequest(conn net.Conn) {
 		if msgAct.Action == "createQueue" {
 			actionCreateQueue(conn, *msgAct)
 		} else if msgAct.Action == "checkQueueName" {
-			exists, _ := checkQueueName(msgAct.Queue)
-			writeMessage(conn, "success", strconv.FormatBool(exists))
+			_, err := checkQueueName(msgAct.Queue)
+			var res string
+			if err != nil {
+				res = "false"
+			} else {
+				res = "true"
+			}
+			writeMessage(conn, "success", res)
 		} else if msgAct.Action == "consumeQueue" {
 			actionConsumeQueue(conn, *msgAct)
 		} else if msgAct.Action == "getNumberOfPaired" {
@@ -138,8 +145,8 @@ func handleRequest(conn net.Conn) {
 }
 
 func actionGetNumberOfPaired(conn net.Conn, msgAct MsgAction) {
-	exists, queueIdx := checkQueueName(msgAct.Queue)
-	if !exists {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
 		writeMessage(conn, "error", "This queueName does not exists")
 		return
 	}
@@ -147,13 +154,13 @@ func actionGetNumberOfPaired(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {
-	exists, queueIdx := checkQueueName(msgAct.Queue)
-	if !exists {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
 		writeMessage(conn, "error", "This queueName does not exists")
 		return
 	}
-	alreadyConsuming, connIdx := checkConsumers(conn, queueIdx)
-	if !alreadyConsuming {
+	connIdx, err := checkConsumers(conn, queueIdx)
+	if err != nil {
 		writeMessage(conn, "error", "You are not consuming this Queue")
 		return
 	}
@@ -164,8 +171,8 @@ func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
-	exists, queueIdx := checkQueueName(msgAct.Queue)
-	if !exists {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
 		writeMessage(conn, "error", "This queueName does not exists")
 		return
 	}
@@ -177,8 +184,8 @@ func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionSendMsg(conn net.Conn, msgAct MsgAction) {
-	exists, queueIdx := checkQueueName(msgAct.Queue)
-	if !exists {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
 		writeMessage(conn, "error", "This queueName does not exists")
 		return
 	}
@@ -201,7 +208,8 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
-	if exists, _ := checkQueueName(msgAct.Queue); exists == true {
+	_, err := checkQueueName(msgAct.Queue)
+	if err == nil {
 		writeMessage(conn, "error", "This queueName already exists")
 		return
 	}
@@ -214,13 +222,13 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
-	exists, queueIdx := checkQueueName(msgAct.Queue)
-	if !exists {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
 		writeMessage(conn, "error", "This queueName does not exists")
 		return
 	}
-	alreadyConsuming, _ := checkConsumers(conn, queueIdx)
-	if alreadyConsuming {
+	_, err = checkConsumers(conn, queueIdx)
+	if err == nil {
 		writeMessage(conn, "error", "Already consuming this queue")
 		return
 	}
@@ -259,22 +267,22 @@ func broadcastToQueue(q Queue, message Message, sender net.Conn) {
 	}
 }
 
-func checkConsumers(conn net.Conn, queueIdx int) (bool, int) {
+func checkConsumers(conn net.Conn, queueIdx int) (int, error) {
 	for idx, _ := range queueList.Queues[queueIdx].Consumers {
 		if conn == queueList.Queues[queueIdx].Consumers[idx].Connection {
-			return true, idx
+			return idx, nil
 		}
 	}
-	return false, -1
+	return -1, errors.New("No consumer on this queue")
 }
 
-func checkQueueName(queue Queue) (bool, int) {
+func checkQueueName(queue Queue) (int, error) {
 	for idx, _ := range queueList.Queues {
 		if queue.QueueName == queueList.Queues[idx].QueueName {
-			return true, idx
+			return idx, nil
 		}
 	}
-	return false, -1
+	return -1, errors.New("No queue with this name")
 }
 
 func copyQueueStruct(m *MsgAction, q *Queue) {

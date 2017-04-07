@@ -3,18 +3,24 @@ package main
 
 import (
 	"log"
+	"flag"
 	"./connectionHandler"
 )
 
 const (
 	swName = "goQue"
 	swVersion = "0.0.1"
-	host = "192.168.1.7"
-	port = "16789"
 )
 
 func main() {
+	var host string
+	var port string
+
+	flag.StringVar(&host, "hostname", "localhost", "serve on this ip")
+	flag.StringVar(&port, "port", "16789", "serve on this port")
+	flag.Parse()
+
 	log.Println("Welcome to " + swName + " v. " + swVersion)
-	log.Println("Starting daemon on port", port )
+	log.Println("Starting daemon on host", host+":"+port )
 	connectionHandler.StartServer(host, port)
 }

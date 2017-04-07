@@ -121,7 +121,9 @@ func consume(pignaConn PignaConnection, callback func(Response)) {
 			break
 		}
 		_ = json.Unmarshal([]byte(message), &response)
-		callback(response)
+		if response.ResponseType == "recvMsg" {
+			callback(response)
+		}
 	}
 }
 
