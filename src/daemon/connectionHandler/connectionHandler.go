@@ -3,21 +3,22 @@ package connectionHandler
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"log"
 	"net"
 	"os"
 	"sort"
-	"sync"
-	"errors"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
 type MsgAction struct {
-	Action  string  `json:"action"`
-	Message Message `json:"message"`
-	Queue   Queue   `json:"queue"`
-	SenderName string `json:"senderName"`
+	Action     string  `json:"action"`
+	Message    Message `json:"message"`
+	Queue      Queue   `json:"queue"`
+	SenderName string  `json:"senderName"`
 }
 
 type QueueList struct {
@@ -33,15 +34,15 @@ type Queue struct {
 }
 
 type Client struct {
-	Connection	net.Conn
-	Name		string
+	Connection net.Conn
+	Name       string
 }
 
 type Message struct {
-	Body		string `json:"body"`
-	SenderConn	net.Conn
-	SenderName	string
-	MsgId     	int
+	Body       string `json:"body"`
+	SenderConn net.Conn
+	SenderName string
+	MsgId      int
 }
 
 type MessageSorter []Message
@@ -117,7 +118,10 @@ func handleRequest(conn net.Conn) {
 		}
 
 		errAction, resType, resText := checkMsgAction(msgAct)
-		if errAction { writeMessage(conn, resType, resText); return }
+		if errAction {
+			writeMessage(conn, resType, resText)
+			return
+		}
 
 		if msgAct.Action == "createQueue" {
 			actionCreateQueue(conn, *msgAct)
@@ -132,6 +136,8 @@ func handleRequest(conn net.Conn) {
 			writeMessage(conn, "success", res)
 		} else if msgAct.Action == "consumeQueue" {
 			actionConsumeQueue(conn, *msgAct)
+		} else if msgAct.Action == "getNamesOfPaired" {
+			actionGetNamesOfPaired(conn, *msgAct)
 		} else if msgAct.Action == "getNumberOfPaired" {
 			actionGetNumberOfPaired(conn, *msgAct)
 		} else if msgAct.Action == "sendMsg" {
@@ -142,6 +148,25 @@ func handleRequest(conn net.Conn) {
 			actionRemoveConsumer(conn, *msgAct)
 		}
 	}
+}
+
+func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
+		writeMessage(conn, "error", "This queueName does not exists")
+		return
+	}
+	var names []string
+	var msg string
+	for _, name := range queueList.Queues[queueIdx].Consumers {
+		names = append(names, name.Name)
+	}
+	if len(names) > 0 {
+		msg = ""
+	} else {
+		msg = strings.Join(names, ",")
+	}
+	writeMessage(conn, "success", msg)
 }
 
 func actionGetNumberOfPaired(conn net.Conn, msgAct MsgAction) {
@@ -178,7 +203,7 @@ func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
 	}
 	queueList.destroyQueue(queueIdx)
 
-	writeMessage(conn, "success", "Queue " + msgAct.Queue.QueueName+
+	writeMessage(conn, "success", "Queue "+msgAct.Queue.QueueName+
 		" destroyed")
 
 }
@@ -325,6 +350,7 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 func isValidAction(action string) bool {
 	switch action {
 	case
+		"getNamesOfPaired",
 		"getNumberOfPaired",
 		"checkQueueName",
 		"sendMsg",

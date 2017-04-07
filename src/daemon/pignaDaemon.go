@@ -1,14 +1,13 @@
 package main
 
-
 import (
-	"log"
-	"flag"
 	"./connectionHandler"
+	"flag"
+	"log"
 )
 
 const (
-	swName = "goQue"
+	swName    = "goQue"
 	swVersion = "0.0.1"
 )
 
@@ -21,6 +20,6 @@ func main() {
 	flag.Parse()
 
 	log.Println("Welcome to " + swName + " v. " + swVersion)
-	log.Println("Starting daemon on host", host+":"+port )
+	log.Println("Starting daemon on host", host+":"+port)
 	connectionHandler.StartServer(host, port)
 }
