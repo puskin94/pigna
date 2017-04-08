@@ -111,7 +111,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		// log.Println("Client sends: " + msg)
+		log.Println("Client sends: " + msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -170,7 +170,6 @@ func actionAckMessage(conn net.Conn, msgAct MsgAction) {
 					queueList.Queues[queueIdx].UnackedMessages[msgIdx+1:]...)
 		}
 	}
-	log.Println("Need to ack ", len(queueList.Queues[queueIdx].UnackedMessages))
 }
 
 func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
@@ -184,11 +183,8 @@ func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
 	for _, client := range queueList.Queues[queueIdx].Consumers {
 		names = append(names, client.Name)
 	}
-	if len(names) == 0 {
-		msg = ""
-	} else {
-		msg = strings.Join(names, ",")
-	}
+
+	msg = strings.Join(names, ",")
 	writeMessage(conn, "success", msg)
 }
 
@@ -299,14 +295,17 @@ func broadcastToQueue(q Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
 		msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", ` +
-			`"responseText": "%s", "senderName": "%s", "msgId": %d}`,
-			q.QueueName, message.Body, message.SenderName, message.MsgId)
-
-		sendToClient(q.Consumers[idx].Connection, msg)
+			`"responseText": "%s", "senderName": "%s", "msgId": %d,` +
+			`"needsAck": %v}`,
+			q.QueueName, message.Body, message.SenderName,
+			message.MsgId, q.NeedsAck)
 
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
+
+		sendToClient(q.Consumers[idx].Connection, msg)
+
 	}
 }
 

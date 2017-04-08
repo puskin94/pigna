@@ -16,7 +16,6 @@ type PignaConnection struct {
 	Connection  net.Conn
 	SenderName  string `json:"senderName"`
 	IsConsuming bool
-
 }
 
 type Response struct {
@@ -24,10 +23,9 @@ type Response struct {
 	ResponseText string `json:"responseText"`
 	SenderName   string `json:"senderName"`
 	QueueName    string `json:"queueName"`
-	MsgId        string `json:"msgId"`
+	MsgId        int    `json:"msgId"`
+	NeedsAck     bool   `json:"needsAck"`
 }
-
-var QueuesAck map[string]bool // this contains queueNames that are requesting acks
 
 func Connect(host string, port string, filename string) (PignaConnection, error) {
 	var pignaConn PignaConnection
@@ -92,9 +90,7 @@ func (pignaConn PignaConnection) CreateQueue(queueName string, needsAck bool) (R
 	writeToClient(pignaConn.Connection, createQueue)
 	res, err := waitForResponse(pignaConn)
 	// if this queue needs an ack, add it to the proper map
-	if err == nil {
-		QueuesAck[queueName] = true
-	}
+
 	return res, err
 }
 
@@ -145,7 +141,7 @@ func consume(pignaConn PignaConnection, callback func(Response)) {
 		}
 		_ = json.Unmarshal([]byte(message), &response)
 		if response.ResponseType == "recvMsg" {
-			if QueuesAck[response.QueueName] {
+			if response.NeedsAck {
 				msgAck := fmt.Sprintf(`{"senderName": "%s", "action":"msgAck"` +
 					`,"queue":{"queueName":"%s"}, "message": {"msgId": %d}}`,
 					pignaConn.SenderName, response.QueueName, response.MsgId)
