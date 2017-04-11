@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -116,13 +115,13 @@ func handleRequest(conn net.Conn) {
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
 		if err != nil {
-			writeMessage(conn, "error", "Invalid JSON request. " + err.Error())
+			writeMessageString(conn, "error", "Invalid JSON request. " + err.Error())
 			return
 		}
 
 		errAction, resType, resText := checkMsgAction(msgAct)
 		if errAction {
-			writeMessage(conn, resType, resText)
+			writeMessageString(conn, resType, resText)
 			return
 		}
 
@@ -136,7 +135,7 @@ func handleRequest(conn net.Conn) {
 			} else {
 				res = "true"
 			}
-			writeMessage(conn, "success", res)
+			writeMessageString(conn, "success", res)
 		} else if msgAct.Action == "consumeQueue" {
 			actionConsumeQueue(conn, *msgAct)
 		} else if msgAct.Action == "getNamesOfPaired" {
@@ -169,31 +168,31 @@ func actionGetQueueNames(conn net.Conn, msgAct MsgAction) {
 	}
 
 	msg = strings.Join(names, ",")
-	writeMessage(conn, "success", msg)
+	writeMessageString(conn, "success", msg)
 }
 
 func actionGetNumOfUnacked(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
-	writeMessage(conn, "success", strconv.Itoa(len(queueList.Queues[queueIdx].UnackedMessages)))
+	writeMessageInt(conn, "success", len(queueList.Queues[queueIdx].UnackedMessages))
 }
 
 func actionGetNumOfUnconsumed(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
-	writeMessage(conn, "success", strconv.Itoa(len(queueList.Queues[queueIdx].UnconsumedMessages)))
+	writeMessageInt(conn, "success", len(queueList.Queues[queueIdx].UnconsumedMessages))
 }
 
 func actionAckMessage(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
 
@@ -210,7 +209,7 @@ func actionAckMessage(conn net.Conn, msgAct MsgAction) {
 func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
 	var names []string
@@ -220,44 +219,44 @@ func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
 	}
 
 	msg = strings.Join(names, ",")
-	writeMessage(conn, "success", msg)
+	writeMessageString(conn, "success", msg)
 }
 
 func actionGetNumberOfPaired(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
-	writeMessage(conn, "success", strconv.Itoa(len(queueList.Queues[queueIdx].Consumers)))
+	writeMessageInt(conn, "success", len(queueList.Queues[queueIdx].Consumers))
 }
 
 func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
 	connIdx, err := checkConsumers(conn, queueIdx)
 	if err != nil {
-		writeMessage(conn, "error", "You are not consuming this Queue")
+		writeMessageString(conn, "error", "You are not consuming this Queue")
 		return
 	}
 
 	queueList.Queues[queueIdx].deleteConsumer(connIdx)
 
-	writeMessage(conn, "success", "You are not consuming anymore")
+	writeMessageString(conn, "success", "You are not consuming anymore")
 }
 
 func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
 	queueList.destroyQueue(queueIdx)
 
-	writeMessage(conn, "success", "Queue "+msgAct.Queue.QueueName+
+	writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
 		" destroyed")
 
 }
@@ -265,7 +264,7 @@ func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
 func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
 
@@ -289,7 +288,7 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 	_, err := checkQueueName(msgAct.Queue)
 	if err == nil {
-		writeMessage(conn, "error", "This queueName already exists")
+		writeMessageString(conn, "error", "This queueName already exists")
 		return
 	}
 	var newQueue Queue
@@ -297,19 +296,19 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 	newQueue.NeedsAck = false
 	copyQueueStruct(&msgAct, &newQueue)
 	queueList.addQueue(newQueue)
-	writeMessage(conn, "success", "Queue "+msgAct.Queue.QueueName+
+	writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
 		" created successfully")
 }
 
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
-		writeMessage(conn, "error", "This queueName does not exists")
+		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
 	_, err = checkConsumers(conn, queueIdx)
 	if err == nil {
-		writeMessage(conn, "error", "Already consuming this queue")
+		writeMessageString(conn, "error", "Already consuming this queue")
 		return
 	}
 
@@ -421,9 +420,15 @@ func isValidAction(action string) bool {
 	return false
 }
 
-func writeMessage(conn net.Conn, messageType string, message string) {
+func writeMessageString(conn net.Conn, messageType string, message string) {
 	sendToClient(conn, `{"responseType": "`+messageType+
-		`", "responseText": "`+message+`"}`)
+		`", "responseTextString": "`+message+`"}`)
+}
+
+func writeMessageInt(conn net.Conn, messageType string, message int) {
+	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextInt": %d}`,
+		messageType, message)
+	sendToClient(conn, msg)
 }
 
 func sendToClient(conn net.Conn, message string) {

@@ -20,7 +20,8 @@ type PignaConnection struct {
 
 type Response struct {
 	ResponseType string `json:"responseType"`
-	ResponseText string `json:"responseText"`
+	ResponseTextString string `json:"responseTextString"`
+	ResponseTextInt int `json:"responseTextInt"`
 	SenderName   string `json:"senderName"`
 	QueueName    string `json:"queueName"`
 	MsgId        int    `json:"msgId"`
@@ -58,7 +59,7 @@ func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) 
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, checkQueueName)
 	res, err := waitForResponse(pignaConn)
-	boo, _ := strconv.ParseBool(res.ResponseText)
+	boo, _ := strconv.ParseBool(res.ResponseTextString)
 	return boo, err
 }
 
@@ -68,8 +69,7 @@ func (pignaConn PignaConnection) GetNumberOfPaired(queueName string) (int, error
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, getNumber)
 	res, err := waitForResponse(pignaConn)
-	num, _ := strconv.Atoi(res.ResponseText)
-	return num, err
+	return res.ResponseTextInt, err
 }
 
 func (pignaConn PignaConnection) GetNumberOfUnacked(queueName string) (int, error) {
@@ -78,8 +78,7 @@ func (pignaConn PignaConnection) GetNumberOfUnacked(queueName string) (int, erro
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, getNumber)
 	res, err := waitForResponse(pignaConn)
-	num, _ := strconv.Atoi(res.ResponseText)
-	return num, err
+	return res.ResponseTextInt, err
 }
 
 func (pignaConn PignaConnection) GetNumberOfUnconsumed(queueName string) (int, error) {
@@ -88,8 +87,7 @@ func (pignaConn PignaConnection) GetNumberOfUnconsumed(queueName string) (int, e
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, getNumber)
 	res, err := waitForResponse(pignaConn)
-	num, _ := strconv.Atoi(res.ResponseText)
-	return num, err
+	return res.ResponseTextInt, err
 }
 
 func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, error) {
@@ -98,7 +96,7 @@ func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, e
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, getNames)
 	res, err := waitForResponse(pignaConn)
-	stringSlice := strings.Split(res.ResponseText, ",")
+	stringSlice := strings.Split(res.ResponseTextString, ",")
 
 	return stringSlice, err
 }
@@ -108,7 +106,7 @@ func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
 		`", "action":"getQueueNames","queue":{}}`
 	writeToClient(pignaConn.Connection, getNames)
 	res, err := waitForResponse(pignaConn)
-	stringSlice := strings.Split(res.ResponseText, ",")
+	stringSlice := strings.Split(res.ResponseTextString, ",")
 
 	return stringSlice, err
 }
