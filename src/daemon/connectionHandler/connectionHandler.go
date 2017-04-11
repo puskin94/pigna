@@ -141,8 +141,14 @@ func handleRequest(conn net.Conn) {
 			actionConsumeQueue(conn, *msgAct)
 		} else if msgAct.Action == "getNamesOfPaired" {
 			actionGetNamesOfPaired(conn, *msgAct)
-		} else if msgAct.Action == "getNumberOfPaired" {
+		} else if msgAct.Action == "getQueueNames" {
+			actionGetQueueNames(conn, *msgAct)
+		} else if msgAct.Action == "getNumOfPaired" {
 			actionGetNumberOfPaired(conn, *msgAct)
+		} else if msgAct.Action == "getNumOfUnacked" {
+			actionGetNumOfUnacked(conn, *msgAct)
+		} else if msgAct.Action == "getNumOfUnconsumed" {
+			actionGetNumOfUnconsumed(conn, *msgAct)
 		} else if msgAct.Action == "sendMsg" {
 			actionSendMsg(conn, *msgAct)
 		} else if msgAct.Action == "msgAck" {
@@ -153,6 +159,35 @@ func handleRequest(conn net.Conn) {
 			actionRemoveConsumer(conn, *msgAct)
 		}
 	}
+}
+
+func actionGetQueueNames(conn net.Conn, msgAct MsgAction) {
+	var names []string
+	var msg string
+	for _, q := range queueList.Queues {
+		names = append(names, q.QueueName)
+	}
+
+	msg = strings.Join(names, ",")
+	writeMessage(conn, "success", msg)
+}
+
+func actionGetNumOfUnacked(conn net.Conn, msgAct MsgAction) {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
+		writeMessage(conn, "error", "This queueName does not exists")
+		return
+	}
+	writeMessage(conn, "success", strconv.Itoa(len(queueList.Queues[queueIdx].UnackedMessages)))
+}
+
+func actionGetNumOfUnconsumed(conn net.Conn, msgAct MsgAction) {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
+		writeMessage(conn, "error", "This queueName does not exists")
+		return
+	}
+	writeMessage(conn, "success", strconv.Itoa(len(queueList.Queues[queueIdx].UnconsumedMessages)))
 }
 
 func actionAckMessage(conn net.Conn, msgAct MsgAction) {
@@ -351,7 +386,7 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 	var resText string = ""
 
 	// `QueueName` is mandatory for every message type
-	if m.Queue.QueueName == "" {
+	if m.Queue.QueueName == "" && m.Action != "getQueueNames" {
 		err = true
 		resText = "Invalid queueName"
 	}
@@ -369,8 +404,11 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 func isValidAction(action string) bool {
 	switch action {
 	case
+		"getNumOfUnconsumed",
+		"getNumOfUnacked",
 		"getNamesOfPaired",
-		"getNumberOfPaired",
+		"getNumOfPaired",
+		"getQueueNames",
 		"checkQueueName",
 		"sendMsg",
 		"msgAck",

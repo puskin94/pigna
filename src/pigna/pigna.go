@@ -64,7 +64,27 @@ func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) 
 
 func (pignaConn PignaConnection) GetNumberOfPaired(queueName string) (int, error) {
 	getNumber := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"getNumberOfPaired","queue":{"queueName":"` +
+		`", "action":"getNumOfPaired","queue":{"queueName":"` +
+		queueName + `"}}`
+	writeToClient(pignaConn.Connection, getNumber)
+	res, err := waitForResponse(pignaConn)
+	num, _ := strconv.Atoi(res.ResponseText)
+	return num, err
+}
+
+func (pignaConn PignaConnection) GetNumberOfUnacked(queueName string) (int, error) {
+	getNumber := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"getNumOfUnacked","queue":{"queueName":"` +
+		queueName + `"}}`
+	writeToClient(pignaConn.Connection, getNumber)
+	res, err := waitForResponse(pignaConn)
+	num, _ := strconv.Atoi(res.ResponseText)
+	return num, err
+}
+
+func (pignaConn PignaConnection) GetNumberOfUnconsumed(queueName string) (int, error) {
+	getNumber := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"getNumOfUnconsumed","queue":{"queueName":"` +
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, getNumber)
 	res, err := waitForResponse(pignaConn)
@@ -76,6 +96,16 @@ func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, e
 	getNames := `{"senderName": "` + pignaConn.SenderName +
 		`", "action":"getNamesOfPaired","queue":{"queueName":"` +
 		queueName + `"}}`
+	writeToClient(pignaConn.Connection, getNames)
+	res, err := waitForResponse(pignaConn)
+	stringSlice := strings.Split(res.ResponseText, ",")
+
+	return stringSlice, err
+}
+
+func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
+	getNames := `{"senderName": "` + pignaConn.SenderName +
+		`", "action":"getQueueNames","queue":{}}`
 	writeToClient(pignaConn.Connection, getNames)
 	res, err := waitForResponse(pignaConn)
 	stringSlice := strings.Split(res.ResponseText, ",")

@@ -1,9 +1,10 @@
 package main
 
 import (
-	"./connectionHandler"
 	"flag"
 	"log"
+	"./connectionHandler"
+	// "./webServer"
 )
 
 const (
@@ -22,4 +23,5 @@ func main() {
 	log.Println("Welcome to " + swName + " v. " + swVersion)
 	log.Println("Starting daemon on host", host+":"+port)
 	connectionHandler.StartServer(host, port)
+	// webServer.StartServer()
 }
