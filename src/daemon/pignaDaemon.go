@@ -1,9 +1,9 @@
 package main
 
 import (
+	"./connectionHandler"
 	"flag"
 	"log"
-	"./connectionHandler"
 	// "./webServer"
 )
 

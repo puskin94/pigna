@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"log"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sort"
@@ -16,9 +16,9 @@ import (
 
 type MsgAction struct {
 	Action     string  `json:"action"`
+	SenderName string  `json:"senderName"`
 	Message    Message `json:"message"`
 	Queue      Queue   `json:"queue"`
-	SenderName string  `json:"senderName"`
 }
 
 type QueueList struct {
@@ -41,10 +41,10 @@ type Client struct {
 }
 
 type Message struct {
-	Body        string `json:"body"`
-	MsgId       int    `json:"msgId"`
-	SenderConn  net.Conn
-	SenderName  string
+	Body       string `json:"body"`
+	MsgId      int    `json:"msgId"`
+	SenderConn net.Conn
+	SenderName string
 }
 
 type MessageSorter []Message
@@ -115,7 +115,7 @@ func handleRequest(conn net.Conn) {
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
 		if err != nil {
-			writeMessageString(conn, "error", "Invalid JSON request. " + err.Error())
+			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
 			return
 		}
 
@@ -129,13 +129,13 @@ func handleRequest(conn net.Conn) {
 			actionCreateQueue(conn, *msgAct)
 		} else if msgAct.Action == "checkQueueName" {
 			_, err := checkQueueName(msgAct.Queue)
-			var res string
+			var res bool
 			if err != nil {
-				res = "false"
+				res = false
 			} else {
-				res = "true"
+				res = true
 			}
-			writeMessageString(conn, "success", res)
+			writeMessageBool(conn, "success", res)
 		} else if msgAct.Action == "consumeQueue" {
 			actionConsumeQueue(conn, *msgAct)
 		} else if msgAct.Action == "getNamesOfPaired" {
@@ -196,7 +196,9 @@ func actionAckMessage(conn net.Conn, msgAct MsgAction) {
 		return
 	}
 
-	if !queueList.Queues[queueIdx].NeedsAck { return }
+	if !queueList.Queues[queueIdx].NeedsAck {
+		return
+	}
 	for msgIdx, msg := range queueList.Queues[queueIdx].UnackedMessages {
 		if msg.MsgId == msgAct.Message.MsgId {
 			queueList.Queues[queueIdx].UnackedMessages =
@@ -237,7 +239,7 @@ func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {
 		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
-	connIdx, err := checkConsumers(conn, queueIdx)
+	connIdx, err := checkConsumers(conn, queueIdx, msgAct.SenderName)
 	if err != nil {
 		writeMessageString(conn, "error", "You are not consuming this Queue")
 		return
@@ -306,7 +308,7 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
-	_, err = checkConsumers(conn, queueIdx)
+	_, err = checkConsumers(conn, queueIdx, msgAct.SenderName)
 	if err == nil {
 		writeMessageString(conn, "error", "Already consuming this queue")
 		return
@@ -328,8 +330,8 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 func broadcastToQueue(q Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
-		msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", ` +
-			`"responseText": "%s", "senderName": "%s", "msgId": %d,` +
+		msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", `+
+			`"responseText": "%s", "senderName": "%s", "msgId": %d,`+
 			`"needsAck": %v}`,
 			q.QueueName, message.Body, message.SenderName,
 			message.MsgId, q.NeedsAck)
@@ -343,9 +345,11 @@ func broadcastToQueue(q Queue, message Message) {
 	}
 }
 
-func checkConsumers(conn net.Conn, queueIdx int) (int, error) {
+func checkConsumers(conn net.Conn, queueIdx int, consumerName string) (int, error) {
 	for idx, _ := range queueList.Queues[queueIdx].Consumers {
-		if conn == queueList.Queues[queueIdx].Consumers[idx].Connection {
+		if conn == queueList.Queues[queueIdx].Consumers[idx].Connection ||
+			consumerName == queueList.Queues[queueIdx].Consumers[idx].Name {
+			log.Println("ellaeh")
 			return idx, nil
 		}
 	}
@@ -421,12 +425,19 @@ func isValidAction(action string) bool {
 }
 
 func writeMessageString(conn net.Conn, messageType string, message string) {
-	sendToClient(conn, `{"responseType": "`+messageType+
-		`", "responseTextString": "`+message+`"}`)
+	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextString": "%s"}`,
+		messageType, message)
+	sendToClient(conn, msg)
 }
 
 func writeMessageInt(conn net.Conn, messageType string, message int) {
 	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextInt": %d}`,
+		messageType, message)
+	sendToClient(conn, msg)
+}
+
+func writeMessageBool(conn net.Conn, messageType string, message bool) {
+	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextBool": %v}`,
 		messageType, message)
 	sendToClient(conn, msg)
 }
