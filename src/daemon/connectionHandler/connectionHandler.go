@@ -331,7 +331,7 @@ func broadcastToQueue(q Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
 		msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", `+
-			`"responseText": "%s", "senderName": "%s", "msgId": %d,`+
+			`"responseTextString": "%s", "senderName": "%s", "msgId": %d,`+
 			`"needsAck": %v}`,
 			q.QueueName, message.Body, message.SenderName,
 			message.MsgId, q.NeedsAck)
@@ -349,7 +349,6 @@ func checkConsumers(conn net.Conn, queueIdx int, consumerName string) (int, erro
 	for idx, _ := range queueList.Queues[queueIdx].Consumers {
 		if conn == queueList.Queues[queueIdx].Consumers[idx].Connection ||
 			consumerName == queueList.Queues[queueIdx].Consumers[idx].Name {
-			log.Println("ellaeh")
 			return idx, nil
 		}
 	}

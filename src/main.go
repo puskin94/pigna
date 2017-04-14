@@ -4,6 +4,7 @@ import (
 	"log"
 	"flag"
 	"strconv"
+	"os/exec"
 	"./pigna"
 )
 
@@ -22,25 +23,33 @@ func main() {
 	}
 
 	// check if the queue exists. If not, create it
-	res, err := pignaConn.CheckQueueName("queueTestName")
+	exists, err := pignaConn.CheckQueueName("queueTestName")
 	if err != nil { log.Println(err.Error()); return }
-	if res.ResponseText == "false" {
-		res, err := pignaConn.CreateQueue("queueTestName")
+	if !exists {
+		res, err := pignaConn.CreateQueue("queueTestName", true)
 		if err != nil { log.Println(err.Error()); return }
 		if res.ResponseType == "error" {
-			log.Println(res.ResponseText)
+			log.Println(res.ResponseTextString)
 		}
 	}
+	// names, err := pignaConn.GetNamesOfPaired("queueTestName")
+	// if err != nil { log.Println(err.Error()); return }
+	// log.Println("Names of consumers:\t", names)
+	//
+	// names, err = pignaConn.GetQueueNames()
+	// if err != nil { log.Println(err.Error()); return }
+	// log.Println("Queue Names:\t", names)
 
-	pignaConn.ConsumeQueue("queueTestName", hello)
 
-	res, err = pignaConn.GetNumberOfPaired("queueTestName")
-	if err != nil { log.Println(err.Error()); return }
-	log.Println(res.ResponseText)
+	// pignaConn.ConsumeQueue("queueTestName", msgHandler)
+	//
+	// num, err := pignaConn.GetNumberOfPaired("queueTestName")
+	// if err != nil { log.Println(err.Error()); return }
+	// log.Println("Number of consumers:\t", num)
 
-	// // // publish random messages
+	// publish random messages
 	// for i := 0; i < 10; i++ {
-	// 	pignaConn.SendMsg("queueTestName", strconv.Itoa(i))
+		pignaConn.SendMsg("queueTestName", "ls -la")
 	// }
 
 	// res, err = pignaConn.RemoveConsumer("queueTestName")
@@ -64,6 +73,23 @@ func main() {
 	pignaConn.Disconnect()
 }
 
-func hello(msg pigna.Response) {
-	log.Println(msg.SenderName + " -> " + msg.QueueName + " -> " + msg.ResponseText)
+func msgHandler(msg pigna.Response) {
+
+	// log.Println(msg.ResponseType)
+	// log.Println(msg.ResponseTextString)
+	// log.Println(msg.ResponseTextInt)
+	// log.Println(msg.ResponseTextBool)
+	// log.Println(msg.SenderName)
+	// log.Println(msg.QueueName)
+	// log.Println(msg.MsgId)
+	// log.Println(msg.NeedsAck)
+	// log.Println("\n")
+	log.Println("Going to execute:\t" + msg.ResponseTextString)
+	out, err := exec.Command("sh","-c", msg.ResponseTextString).Output()
+	log.Println(string(out[:]))
+	if err != nil {
+		log.Println(err)
+	}
+
+
 }
