@@ -130,7 +130,7 @@ func (pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error
 	return res, err
 }
 
-func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(Response)) {
+func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(PignaConnection, Response)) {
 	consumeQueue := `{"senderName": "` + pignaConn.SenderName +
 		`", "action":"consumeQueue","queue":{"queueName":"` +
 		queueName + `"}}`
@@ -158,7 +158,7 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
 	writeToClient(pignaConn.Connection, sendMsg)
 }
 
-func consume(pignaConn PignaConnection, callback func(Response)) {
+func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)) {
 	for pignaConn.IsConsuming {
 		var response Response
 		message, err := bufio.NewReader(pignaConn.Connection).ReadString('\n')
@@ -174,7 +174,7 @@ func consume(pignaConn PignaConnection, callback func(Response)) {
 					pignaConn.SenderName, response.QueueName, response.MsgId)
 				writeToClient(pignaConn.Connection, msgAck)
 			}
-			callback(response)
+			callback(pignaConn, response)
 		}
 	}
 }
