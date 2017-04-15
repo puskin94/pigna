@@ -2,11 +2,11 @@ package pigna
 
 import (
 	"bufio"
-	"encoding/json"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
-	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -19,14 +19,14 @@ type PignaConnection struct {
 }
 
 type Response struct {
-	ResponseType string `json:"responseType"`
+	ResponseType       string `json:"responseType"`
 	ResponseTextString string `json:"responseTextString"`
-	ResponseTextInt int `json:"responseTextInt"`
-	ResponseTextBool bool `json:"respo"`
-	SenderName   string `json:"senderName"`
-	QueueName    string `json:"queueName"`
-	MsgId        int    `json:"msgId"`
-	NeedsAck     bool   `json:"needsAck"`
+	ResponseTextInt    int    `json:"responseTextInt"`
+	ResponseTextBool   bool   `json:"ResponseTextBool"`
+	SenderName         string `json:"senderName"`
+	QueueName          string `json:"queueName"`
+	MsgId              int    `json:"msgId"`
+	NeedsAck           bool   `json:"needsAck"`
 }
 
 func Connect(host string, port string, filename string) (PignaConnection, error) {
@@ -55,7 +55,7 @@ func (pignaConn PignaConnection) Disconnect() {
 }
 
 func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) {
-	checkQueueName := fmt.Sprintf(`{"senderName": "%s", ` +
+	checkQueueName := fmt.Sprintf(`{"senderName": "%s", `+
 		`"action":"checkQueueName","queue":{"queueName":"%s"}}`,
 		pignaConn.SenderName, queueName)
 	writeToClient(pignaConn.Connection, checkQueueName)
@@ -132,13 +132,13 @@ func (pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error
 }
 
 func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(PignaConnection, Response)) {
+	pignaConn.IsConsuming = true
+	go consume(*pignaConn, callback)
 	consumeQueue := `{"senderName": "` + pignaConn.SenderName +
 		`", "action":"consumeQueue","queue":{"queueName":"` +
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, consumeQueue)
 
-	pignaConn.IsConsuming = true
-	go consume(*pignaConn, callback)
 }
 
 func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, error) {
@@ -173,7 +173,7 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 		response.ResponseTextString = string(dec[:])
 		if response.ResponseType == "recvMsg" {
 			if response.NeedsAck {
-				msgAck := fmt.Sprintf(`{"senderName": "%s", "action":"msgAck"` +
+				msgAck := fmt.Sprintf(`{"senderName": "%s", "action":"msgAck"`+
 					`,"queue":{"queueName":"%s"}, "message": {"msgId": %d}}`,
 					pignaConn.SenderName, response.QueueName, response.MsgId)
 				writeToClient(pignaConn.Connection, msgAck)
