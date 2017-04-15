@@ -3,6 +3,7 @@ package pigna
 import (
 	"bufio"
 	"encoding/json"
+	"encoding/base64"
 	"io/ioutil"
 	"log"
 	"fmt"
@@ -152,9 +153,10 @@ func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, er
 }
 
 func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
-	sendMsg := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"sendMsg","queue":{"queueName":"` +
-		queueName + `"}, "message": {"body": "` + message + `"}}`
+	sendMsg := fmt.Sprintf(`{"senderName": "%s", "action":"sendMsg",`+
+		`"queue":{"queueName":"%s"}, "message": {"body": "%s"}}`,
+		pignaConn.SenderName, queueName,
+		base64.StdEncoding.EncodeToString([]byte(message)))
 	writeToClient(pignaConn.Connection, sendMsg)
 }
 
@@ -167,6 +169,8 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 			break
 		}
 		_ = json.Unmarshal([]byte(message), &response)
+		dec, _ := base64.StdEncoding.DecodeString(response.ResponseTextString)
+		response.ResponseTextString = string(dec[:])
 		if response.ResponseType == "recvMsg" {
 			if response.NeedsAck {
 				msgAck := fmt.Sprintf(`{"senderName": "%s", "action":"msgAck"` +
