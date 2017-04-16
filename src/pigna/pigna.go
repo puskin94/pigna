@@ -161,7 +161,7 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
 }
 
 func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)) {
-	chunkSize := 1024
+	chunkSize := 128
 	var broken string = ""
 	for pignaConn.IsConsuming {
 		var response Response
@@ -173,22 +173,18 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 			break
 		}
 		if broken != "" {
-			log.Println("\t\t\tPRIMA\n"+string(buffer[:]))
 			buffer = append([]byte(broken), buffer...)
-			log.Println("\t\t\tDOPO\n" +string(buffer[:]))
-			broken = ""
-			log.Println("\n\n")
 		}
 		buff := buffer[:readLen]
 		msgs := strings.Split(string(buff), "\n")
 
+		broken = ""
+
 		for _, msg := range msgs {
 			err := json.Unmarshal([]byte(msg), &response)
 			if err != nil && len(msg) > 0 {
-				// incomplete chunk?
 				broken = msg
-				log.Println("devo attaccare " +broken)
-				// continue
+				continue
 			}
 			dec, _ := base64.StdEncoding.DecodeString(response.ResponseTextString)
 			response.ResponseTextString = string(dec[:])
