@@ -12,7 +12,7 @@ import (
 	"strings"
 	// "strconv"
 	"sync"
-	"time"
+	// "time"
 )
 
 type MsgAction struct {
@@ -445,5 +445,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
 	log.Println(message)
-	time.Sleep(0 * time.Millisecond)
+	// time.Sleep(0 * time.Millisecond)
 }

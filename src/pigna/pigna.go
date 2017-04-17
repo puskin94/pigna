@@ -161,33 +161,38 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
 }
 
 func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)) {
-	chunkSize := 128
-	var broken string = ""
+	chunkSize := 1024
+	broken := ""
 	for pignaConn.IsConsuming {
 		var response Response
 
-		buffer := make([]byte, chunkSize)
+		var buffer = make([]byte, chunkSize)
+		// log.Println(string(buffer[:]))
+
 		readLen, err := pignaConn.Connection.Read(buffer)
+
 		if err != nil {
 			log.Println("Connection closed by the server. Shutting down")
 			break
 		}
-		if broken != "" {
-			buffer = append([]byte(broken), buffer...)
-		}
-		buff := buffer[:readLen]
-		msgs := strings.Split(string(buff), "\n")
+		buffer = buffer[:readLen]
+		msgs := strings.Split(string(buffer[:readLen]), "\n")
 
-		broken = ""
-
-		for _, msg := range msgs {
-			err := json.Unmarshal([]byte(msg), &response)
-			if err != nil && len(msg) > 0 {
-				broken = msg
-				continue
+		for msgIdx:=0;msgIdx<len(msgs);msgIdx++ {
+			err := json.Unmarshal([]byte(msgs[msgIdx]), &response)
+			if err != nil && len(msgs[msgIdx]) > 0 {
+				if msgs[msgIdx][0] == '{' {
+					broken = msgs[msgIdx]
+					continue
+				} else {
+					_ = json.Unmarshal([]byte(broken + msgs[msgIdx]), &response)
+					broken = ""
+					// msgIdx = 0
+				}
 			}
 			dec, _ := base64.StdEncoding.DecodeString(response.ResponseTextString)
 			response.ResponseTextString = string(dec[:])
+
 			if response.ResponseType == "recvMsg" {
 				if response.NeedsAck {
 					msgAck := fmt.Sprintf(`{"senderName": "%s", "action":"msgAck"`+
