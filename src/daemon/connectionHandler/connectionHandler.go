@@ -107,7 +107,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		log.Println("Client sends: " + msg)
+		// log.Println("Client sends: " + msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -449,5 +449,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	log.Println(message)
+	// log.Println(message)
 }
