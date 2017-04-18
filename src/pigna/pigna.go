@@ -179,6 +179,9 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 		msgs := strings.Split(string(buffer[:readLen]), "\n")
 
 		for msgIdx:=0;msgIdx<len(msgs);msgIdx++ {
+			if len(msgs[msgIdx]) == 0 {
+				continue
+			}
 			err := json.Unmarshal([]byte(msgs[msgIdx]), &response)
 			if err != nil && len(msgs[msgIdx]) > 0 {
 				if msgs[msgIdx][0] == '{' {
