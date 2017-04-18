@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -50,12 +49,6 @@ type Message struct {
 	SenderConn net.Conn
 	SenderName string
 }
-
-type MessageSorter []Message
-
-func (a MessageSorter) Len() int           { return len(a) }
-func (a MessageSorter) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a MessageSorter) Less(i, j int) bool { return a[i].MsgId < a[j].MsgId }
 
 var queueList QueueList
 
@@ -307,21 +300,30 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
+	var consumerHasChangedSocket bool = false
 	queueIdx, err := checkQueueName(msgAct.Queue)
 	if err != nil {
 		writeMessageString(conn, "error", "This queueName does not exists")
 		return
 	}
-	_, err = checkConsumers(conn, queueIdx, msgAct.SenderName)
+	consumerIdx, err := checkConsumers(conn, queueIdx, msgAct.SenderName)
+
 	if err == nil {
-		writeMessageString(conn, "error", "Already consuming this queue")
-		return
+		// update che conn socket if the same consumer has changed it
+		if queueList.Queues[queueIdx].Consumers[consumerIdx].Connection != conn {
+			queueList.Queues[queueIdx].Consumers[consumerIdx].Connection = conn
+			consumerHasChangedSocket = true
+		} else {
+			writeMessageString(conn, "error", "Already consuming this queue")
+			return
+		}
 	}
 
-	// adding the connection to the proper queue `Consumers`
-	queueList.Queues[queueIdx].addConsumer(conn, msgAct.SenderName)
+	// adding the connection to the proper queue `Consumers` only if there is a new socket
+	if !consumerHasChangedSocket {
+		queueList.Queues[queueIdx].addConsumer(conn, msgAct.SenderName)
+	}
 
-	sort.Sort(MessageSorter(queueList.Queues[queueIdx].UnconsumedMessages))
 	// clear the queue sending the `UnconsumedMessages`
 	for _, _ = range queueList.Queues[queueIdx].UnconsumedMessages {
 		broadcastToQueue(queueList.Queues[queueIdx],

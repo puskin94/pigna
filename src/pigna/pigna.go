@@ -190,7 +190,6 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 				} else {
 					_ = json.Unmarshal([]byte(broken + msgs[msgIdx]), &response)
 					broken = ""
-					// msgIdx = 0
 				}
 			}
 			dec, _ := base64.StdEncoding.DecodeString(response.ResponseTextString)
