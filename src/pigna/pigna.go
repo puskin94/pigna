@@ -13,9 +13,10 @@ import (
 )
 
 type PignaConnection struct {
-	Connection  net.Conn
-	SenderName  string `json:"senderName"`
-	IsConsuming bool
+	Connection    net.Conn
+	SenderName    string          `json:"senderName"`
+	IsConsuming   bool
+	ConsumingList map[string]bool
 }
 
 type Response struct {
@@ -31,6 +32,7 @@ type Response struct {
 
 func Connect(host string, port string, filename string) (PignaConnection, error) {
 	var pignaConn PignaConnection
+	pignaConn.ConsumingList = make(map[string]bool)
 
 	// read the config file
 	raw, err := ioutil.ReadFile(filename)
@@ -138,7 +140,11 @@ func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(P
 		`", "action":"consumeQueue","queue":{"queueName":"` +
 		queueName + `"}}`
 	writeToClient(pignaConn.Connection, consumeQueue)
-
+	res, _ := waitForResponse(*pignaConn)
+	// stop the consuming go routine
+	if res.ResponseType == "success" {
+		pignaConn.ConsumingList[queueName] = true
+	}
 }
 
 func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, error) {
@@ -149,6 +155,9 @@ func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, er
 	res, err := waitForResponse(*pignaConn)
 	// stop the consuming go routine
 	pignaConn.IsConsuming = false
+	if res.ResponseType == "success" && pignaConn.ConsumingList[queueName] {
+		pignaConn.ConsumingList[queueName] = false
+	}
 	return res, err
 }
 

@@ -322,6 +322,7 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	// adding the connection to the proper queue `Consumers` only if there is a new socket
 	if !consumerHasChangedSocket {
 		queueList.Queues[queueIdx].addConsumer(conn, msgAct.SenderName)
+		writeMessageString(conn, "success", "Consuming the queue")
 	}
 
 	// clear the queue sending the `UnconsumedMessages`
