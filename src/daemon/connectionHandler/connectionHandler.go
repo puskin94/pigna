@@ -10,10 +10,13 @@ import (
 	"os"
 	"sort"
 	"strings"
-	// "strconv"
 	"sync"
-	// "time"
 )
+
+/*
+~24s 1000000 with ack
+~17s 1000000 without ack
+*/
 
 type MsgAction struct {
 	Action     string  `json:"action"`
@@ -111,7 +114,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		log.Println("Client sends: " + msg)
+		// log.Println("Client sends: " + msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -444,6 +447,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	log.Println(message)
-	// time.Sleep(0 * time.Millisecond)
+	// log.Println(message)
 }
