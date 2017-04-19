@@ -1,7 +1,7 @@
 # Pigna
 
 
-<img src="https://github.com/puskin94/pigna/raw/master/pigna_logo_blue_dark.png" height="200" width="250">
+<img src="http://puskin.it/pigna_logo_blue_dark.png" height="200" width="250">
 
 ## What is Pigna
 *Pigna* is a software written in Go capable of managing and routing messages from Producers to Consumers.
