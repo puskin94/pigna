@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/puskin94/pigna/daemon/pignaDaemon"
 	"flag"
+	"github.com/puskin94/pigna/daemon/pignaDaemon"
 	"log"
 )
 

@@ -14,7 +14,7 @@ import (
 
 type PignaConnection struct {
 	Connection    net.Conn
-	SenderName    string          `json:"senderName"`
+	SenderName    string `json:"senderName"`
 	IsConsuming   bool
 	ConsumingList map[string]bool
 }
@@ -187,7 +187,7 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 		buffer = buffer[:readLen]
 		msgs := strings.Split(string(buffer[:readLen]), "\n")
 
-		for msgIdx:=0;msgIdx<len(msgs);msgIdx++ {
+		for msgIdx := 0; msgIdx < len(msgs); msgIdx++ {
 			if len(msgs[msgIdx]) == 0 {
 				continue
 			}
@@ -197,7 +197,7 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 					broken = msgs[msgIdx]
 					continue
 				} else {
-					_ = json.Unmarshal([]byte(broken + msgs[msgIdx]), &response)
+					_ = json.Unmarshal([]byte(broken+msgs[msgIdx]), &response)
 					broken = ""
 				}
 			}
