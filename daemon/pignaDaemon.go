@@ -1,7 +1,7 @@
 package main
 
 import (
-	"./connectionHandler"
+	"github.com/puskin94/pigna/daemon/pignaDaemon"
 	"flag"
 	"log"
 )
@@ -19,5 +19,5 @@ func main() {
 
 	log.Println("Welcome to " + swName + " v. " + swVersion)
 	log.Println("Starting daemon on port", port)
-	connectionHandler.StartServer("0.0.0.0", port)
+	pignaDaemon.StartServer("0.0.0.0", port)
 }

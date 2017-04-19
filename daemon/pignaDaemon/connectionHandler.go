@@ -1,4 +1,4 @@
-package connectionHandler
+package pignaDaemon
 
 import (
 	"bufio"
