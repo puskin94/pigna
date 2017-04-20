@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"strings"
 	"sync"
 )
 
@@ -73,36 +72,6 @@ func StartServer(host, port string) {
 	}
 }
 
-func (q *QueueList) addQueue(newQueue Queue) []Queue {
-	q.Queues = append(q.Queues, newQueue)
-	return q.Queues
-}
-
-func (q *QueueList) destroyQueue(queueIdx int) []Queue {
-	q.Queues[queueIdx] = q.Queues[len(q.Queues)-1]
-	q.Queues = q.Queues[:len(q.Queues)-1]
-	return q.Queues
-}
-
-func (q *Queue) addConsumer(conn net.Conn, senderName string) []Client {
-	var c Client
-	c.Connection = conn
-	c.Name = senderName
-	q.Consumers = append(q.Consumers, c)
-	return q.Consumers
-}
-
-func (q *Queue) addUnconsumedMessage(message Message) []Message {
-	q.UnconsumedMessages = append(q.UnconsumedMessages, message)
-	return q.UnconsumedMessages
-}
-
-func (q *Queue) deleteConsumer(clIdx int) []Client {
-	q.Consumers[clIdx] = q.Consumers[len(q.Consumers)-1]
-	q.Consumers = q.Consumers[:len(q.Consumers)-1]
-	return q.Consumers
-}
-
 func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
@@ -157,181 +126,34 @@ func handleRequest(conn net.Conn) {
 	}
 }
 
-func actionGetQueueNames(conn net.Conn, msgAct MsgAction) {
-	var names []string
-	var msg string
-	for _, q := range queueList.Queues {
-		names = append(names, q.QueueName)
-	}
-
-	msg = strings.Join(names, ",")
-	writeMessageString(conn, "success", msg)
+func (q *QueueList) addQueue(newQueue Queue) []Queue {
+	q.Queues = append(q.Queues, newQueue)
+	return q.Queues
 }
 
-func actionGetNumOfUnacked(conn net.Conn, msgAct MsgAction) {
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-	writeMessageInt(conn, "success", len(queueList.Queues[queueIdx].UnackedMessages))
+func (q *QueueList) destroyQueue(queueIdx int) []Queue {
+	q.Queues[queueIdx] = q.Queues[len(q.Queues)-1]
+	q.Queues = q.Queues[:len(q.Queues)-1]
+	return q.Queues
 }
 
-func actionGetNumOfUnconsumed(conn net.Conn, msgAct MsgAction) {
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-	writeMessageInt(conn, "success", len(queueList.Queues[queueIdx].UnconsumedMessages))
+func (q *Queue) addConsumer(conn net.Conn, senderName string) []Client {
+	var c Client
+	c.Connection = conn
+	c.Name = senderName
+	q.Consumers = append(q.Consumers, c)
+	return q.Consumers
 }
 
-func actionAckMessage(conn net.Conn, msgAct MsgAction) {
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-
-	if !queueList.Queues[queueIdx].NeedsAck {
-		return
-	}
-	for msgIdx, msg := range queueList.Queues[queueIdx].UnackedMessages {
-		if msg.MsgId == msgAct.Message.MsgId {
-			queueList.Queues[queueIdx].UnackedMessages =
-				append(queueList.Queues[queueIdx].UnackedMessages[:msgIdx],
-					queueList.Queues[queueIdx].UnackedMessages[msgIdx+1:]...)
-		}
-	}
+func (q *Queue) addUnconsumedMessage(message Message) []Message {
+	q.UnconsumedMessages = append(q.UnconsumedMessages, message)
+	return q.UnconsumedMessages
 }
 
-func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-	var names []string
-	var msg string
-	for _, client := range queueList.Queues[queueIdx].Consumers {
-		names = append(names, client.Name)
-	}
-
-	msg = strings.Join(names, ",")
-	writeMessageString(conn, "success", msg)
-}
-
-func actionGetNumberOfPaired(conn net.Conn, msgAct MsgAction) {
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-	writeMessageInt(conn, "success", len(queueList.Queues[queueIdx].Consumers))
-}
-
-func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-	connIdx, err := checkConsumers(conn, queueIdx, msgAct.SenderName)
-	if err != nil {
-		writeMessageString(conn, "error", "You are not consuming this Queue")
-		return
-	}
-
-	queueList.Queues[queueIdx].deleteConsumer(connIdx)
-
-	writeMessageString(conn, "success", "You are not consuming anymore")
-}
-
-func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-	queueList.destroyQueue(queueIdx)
-
-	writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
-		" destroyed")
-
-}
-
-func actionSendMsg(conn net.Conn, msgAct MsgAction) {
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-
-	msgAct.Message.SenderConn = conn
-	msgAct.Message.SenderName = msgAct.SenderName
-
-	queueList.Queues[queueIdx].MutexCounter.Lock()
-	queueList.Queues[queueIdx].MsgCounter++
-	msgAct.Message.MsgId = queueList.Queues[queueIdx].MsgCounter
-	queueList.Queues[queueIdx].MutexCounter.Unlock()
-
-	// if there are no `Consumers`, add to the queue
-	if len(queueList.Queues[queueIdx].Consumers) == 0 {
-		queueList.Queues[queueIdx].addUnconsumedMessage(msgAct.Message)
-	} else {
-		broadcastToQueue(queueList.Queues[queueIdx],
-			msgAct.Message)
-	}
-}
-
-func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
-	_, err := checkQueueName(msgAct.Queue)
-	if err == nil {
-		writeMessageString(conn, "error", "This queueName already exists")
-		return
-	}
-	var newQueue Queue
-	newQueue.MsgCounter = 0
-	newQueue.NeedsAck = false
-	copyQueueStruct(&msgAct, &newQueue)
-	queueList.addQueue(newQueue)
-	writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
-		" created successfully")
-}
-
-func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
-	var consumerHasChangedSocket bool = false
-	queueIdx, err := checkQueueName(msgAct.Queue)
-	if err != nil {
-		writeMessageString(conn, "error", "This queueName does not exists")
-		return
-	}
-	consumerIdx, err := checkConsumers(conn, queueIdx, msgAct.SenderName)
-
-	if err == nil {
-		// update che conn socket if the same consumer has changed it
-		if queueList.Queues[queueIdx].Consumers[consumerIdx].Connection != conn {
-			queueList.Queues[queueIdx].Consumers[consumerIdx].Connection = conn
-			consumerHasChangedSocket = true
-		} else {
-			writeMessageString(conn, "error", "Already consuming this queue")
-			return
-		}
-	}
-
-	// adding the connection to the proper queue `Consumers` only if there is a new socket
-	if !consumerHasChangedSocket {
-		queueList.Queues[queueIdx].addConsumer(conn, msgAct.SenderName)
-		writeMessageString(conn, "success", "Consuming the queue")
-	}
-
-	// clear the queue sending the `UnconsumedMessages`
-	for _, _ = range queueList.Queues[queueIdx].UnconsumedMessages {
-		broadcastToQueue(queueList.Queues[queueIdx],
-			queueList.Queues[queueIdx].UnconsumedMessages[0])
-		queueList.Queues[queueIdx].UnconsumedMessages =
-			queueList.Queues[queueIdx].UnconsumedMessages[1:]
-	}
+func (q *Queue) deleteConsumer(clIdx int) []Client {
+	q.Consumers[clIdx] = q.Consumers[len(q.Consumers)-1]
+	q.Consumers = q.Consumers[:len(q.Consumers)-1]
+	return q.Consumers
 }
 
 func broadcastToQueue(q Queue, message Message) {

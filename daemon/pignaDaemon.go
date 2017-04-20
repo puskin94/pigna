@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	swName    = "goQue"
+	swName    = "Pigna"
 	swVersion = "0.0.1"
 )
 
