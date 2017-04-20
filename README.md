@@ -7,12 +7,12 @@
 *Pigna* is a software written in Go capable of managing and routing messages from Producers to Consumers.
 
 ## How does it works?
-Producers and Consumers communicates thanks to a daemon called (to be creative) **pignaDaemon**; just run it (`go run daemon/pignaDaemon.go`) and you are ready to go. It listens on the port number **16789** but you can change it specifying the `--port` param.
+Producers and Consumers communicate thanks to a daemon called (to be creative) **pignaDaemon**; just run it (`go run daemon/pignaDaemon.go`) and you are ready to go. It listens on the port number **16789** but you can change it specifying the `--port` param.
 
 If on a queue there are only publishers and no consumers, all the sent messages are stored by the daemon and sent when a consumer `Pairs` to a queue.
 
 ### config.json
-This file is mandatory but it contains useful informations:
+This file is mandatory because it contains useful informations:
 
 * the client name
 
@@ -26,7 +26,7 @@ the client authentication (TODO)
 ```
 
 ### Queues
-Every message is routed on *queues* and on every *queue* are listening one or more consumers. Every consumer receive, unmarshall and handle the message
+Every message is routed on *queues* and on every *queue* are listening one or more consumers. Every consumer receives, unmarshall and handles the message
 
 #### Ack
 *Queues* can be created with the ack option: if so, every consumer, every time receives a message warns the **pignaDaemon** about the successfull transmission.
@@ -48,7 +48,7 @@ Returns the number of consumers on a secified queue
 If the queue has been created with the *ack* flag, it returns the number of messages not already acked.
 
 #### (pignaConn PignaConnection) GetNumberOfUnconsumed(queueName string)
-Returns the number of unconsumed messages on a specified queue
+Returns the number of unconsumed messages on a specific queue
 
 #### (pignaConn PignaConnection) GetNamesOfPaired(queueName string)
 Returns an array containing the names of the client that are consuming a queue
