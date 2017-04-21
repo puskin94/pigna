@@ -43,10 +43,14 @@ type Client struct {
 }
 
 type Message struct {
-	Body       string `json:"body"`
-	MsgId      int    `json:"msgId"`
-	SenderConn net.Conn
-	SenderName string
+	Body        string `json:"body"`
+	MsgId       int    `json:"msgId"`
+	MsgUUID     string `json:"UUID"`
+	IsAChunk    bool   `json:"isAChunk"`
+	NChunk      int    `json:"nChunk"`
+	TotalChunks int    `json:"totalChunks"`
+	SenderName  string
+	SenderConn  net.Conn
 }
 
 var queueList QueueList
@@ -76,7 +80,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		// log.Println("Client sends: " + msg)
+		log.Println("Client sends: " + msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -156,21 +160,21 @@ func (q *Queue) deleteConsumer(clIdx int) []Client {
 	return q.Consumers
 }
 
+// XXX: if a message is chunked... wait an ack before send the next chunk?
 func broadcastToQueue(q Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
 		msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", `+
 			`"responseTextString": "%s", "senderName": "%s", "msgId": %d,`+
-			`"needsAck": %v}`,
+			`"needsAck": %v, "isAChunk": %v, "nChunk": %d, "totalChunks": %d}`,
 			q.QueueName, message.Body, message.SenderName,
-			message.MsgId, q.NeedsAck)
+			message.MsgId, q.NeedsAck, message.IsAChunk, message.NChunk,
+			message.TotalChunks)
 
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
-
 		sendToClient(q.Consumers[idx].Connection, msg)
-
 	}
 }
 
@@ -272,5 +276,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	// log.Println(message)
+	log.Println(message)
 }

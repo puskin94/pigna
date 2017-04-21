@@ -10,6 +10,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"github.com/satori/go.uuid"
 )
 
 type PignaConnection struct {
@@ -27,8 +29,16 @@ type Response struct {
 	SenderName         string `json:"senderName"`
 	QueueName          string `json:"queueName"`
 	MsgId              int    `json:"msgId"`
+	MsgUUID            string `json:"UUID"`
 	NeedsAck           bool   `json:"needsAck"`
+	IsAChunk           bool   `json:"isAChunk"`
+	NChunk             int    `json:"nChunk"`
+	TotalChunks        int    `json:"totalChunks"`
 }
+
+// here will be stored the message chunks waiting to be complete
+// the key is the MsgUUID
+var chunked map[string][]Response
 
 func Connect(host string, port string, filename string) (PignaConnection, error) {
 	var pignaConn PignaConnection
@@ -162,11 +172,39 @@ func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, er
 }
 
 func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
-	sendMsg := fmt.Sprintf(`{"senderName": "%s", "action":"sendMsg",`+
-		`"queue":{"queueName":"%s"}, "message": {"body": "%s"}}`,
-		pignaConn.SenderName, queueName,
-		base64.StdEncoding.EncodeToString([]byte(message)))
-	writeToClient(pignaConn.Connection, sendMsg)
+	maxMessageLen := 512
+	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
+	var messageChunks = make([]string, len(encodedMessage)/maxMessageLen+1)
+	// Creating UUID Version 4. Only one even if the message is chunked.
+	// different chunks will have the same UUID
+	u1 := uuid.NewV4()
+	// split the message in little chunks if it is grater than `maxMessageLen`
+	if len(encodedMessage) > maxMessageLen {
+		for i:=0;i<len(encodedMessage);i+=maxMessageLen {
+			if i+maxMessageLen <= len(encodedMessage) {
+				log.Println(encodedMessage[i:i+maxMessageLen])
+				messageChunks[int(i/maxMessageLen)] = encodedMessage[i:i+maxMessageLen]
+			} else {
+				messageChunks[int(i/maxMessageLen)] = encodedMessage[i:]
+			}
+		}
+	} else {
+		// send as an unique message, no need to add the property to the string
+		sendMsg := fmt.Sprintf(`{"senderName": "%s", "action":"sendMsg",`+
+			`"queue":{"queueName":"%s"}, "message": {"body": "%s", "UUID": "%s"}}`,
+			pignaConn.SenderName, queueName, encodedMessage, u1)
+		writeToClient(pignaConn.Connection, sendMsg)
+		return
+	}
+
+	for i:=0;i<len(messageChunks);i++ {
+		sendMsg := fmt.Sprintf(`{"senderName": "%s", "action":"sendMsg",`+
+			`"queue":{"queueName":"%s"}, "message": {"body": "%s", `+
+			`"isAChunk": %v, "nChunk": %d, "totalChunks": %d, "UUID": "%s"}}`,
+			pignaConn.SenderName, queueName,
+			messageChunks[i], true, i, len(messageChunks), u1)
+		writeToClient(pignaConn.Connection, sendMsg)
+	}
 }
 
 func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)) {
@@ -204,6 +242,18 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 			dec, _ := base64.StdEncoding.DecodeString(response.ResponseTextString)
 			response.ResponseTextString = string(dec[:])
 
+			// check if the received message is a part of a bigger one
+			// if so, wait all the parts and then return it to the callback
+			if response.IsAChunk {
+				chunked[response.MsgUUID][response.NChunk] = response
+				// have I collected all the chunks?
+				if len(chunked[response.MsgUUID]) != response.TotalChunks {
+					continue
+				}
+				for _, msg := range chunked[response.MsgUUID] {
+					// collect all the messages and create a single
+				}
+			}
 			if response.ResponseType == "recvMsg" {
 				if response.NeedsAck {
 					msgAck := fmt.Sprintf(`{"senderName": "%s", "action":"msgAck"`+
