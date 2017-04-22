@@ -38,10 +38,11 @@ type Response struct {
 
 // here will be stored the message chunks waiting to be complete
 // the key is the MsgUUID
-var chunked map[string][]Response
+var chunked map[string](map[int]Response)
 
 func Connect(host string, port string, filename string) (PignaConnection, error) {
 	var pignaConn PignaConnection
+	chunked = make(map[string](map[int]Response))
 	pignaConn.ConsumingList = make(map[string]bool)
 
 	// read the config file
@@ -245,14 +246,21 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 			// check if the received message is a part of a bigger one
 			// if so, wait all the parts and then return it to the callback
 			if response.IsAChunk {
+				if _, isPresent := chunked[response.MsgUUID]; !isPresent {
+					chunked[response.MsgUUID] = make(map[int]Response, response.TotalChunks)
+				}
 				chunked[response.MsgUUID][response.NChunk] = response
 				// have I collected all the chunks?
 				if len(chunked[response.MsgUUID]) != response.TotalChunks {
 					continue
 				}
+				// reuse the last message
+				response.ResponseTextString = ""
 				for _, msg := range chunked[response.MsgUUID] {
 					// collect all the messages and create a single
+					response.ResponseTextString += msg.ResponseTextString
 				}
+				delete(chunked, response.MsgUUID)
 			}
 			if response.ResponseType == "recvMsg" {
 				if response.NeedsAck {
