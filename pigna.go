@@ -181,10 +181,10 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
 	u1 := uuid.NewV4()
 	// split the message in little chunks if it is grater than `maxMessageLen`
 	if len(encodedMessage) > maxMessageLen {
-		for i:=0;i<len(encodedMessage);i+=maxMessageLen {
+		for i := 0; i < len(encodedMessage); i += maxMessageLen {
 			if i+maxMessageLen <= len(encodedMessage) {
-				log.Println(encodedMessage[i:i+maxMessageLen])
-				messageChunks[int(i/maxMessageLen)] = encodedMessage[i:i+maxMessageLen]
+				log.Println(encodedMessage[i : i+maxMessageLen])
+				messageChunks[int(i/maxMessageLen)] = encodedMessage[i : i+maxMessageLen]
 			} else {
 				messageChunks[int(i/maxMessageLen)] = encodedMessage[i:]
 			}
@@ -198,7 +198,7 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
 		return
 	}
 
-	for i:=0;i<len(messageChunks);i++ {
+	for i := 0; i < len(messageChunks); i++ {
 		sendMsg := fmt.Sprintf(`{"senderName": "%s", "action":"sendMsg",`+
 			`"queue":{"queueName":"%s"}, "message": {"body": "%s", `+
 			`"isAChunk": %v, "nChunk": %d, "totalChunks": %d, "UUID": "%s"}}`,
@@ -240,8 +240,6 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 					broken = ""
 				}
 			}
-			dec, _ := base64.StdEncoding.DecodeString(response.ResponseTextString)
-			response.ResponseTextString = string(dec[:])
 
 			// check if the received message is a part of a bigger one
 			// if so, wait all the parts and then return it to the callback
@@ -256,12 +254,16 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 				}
 				// reuse the last message
 				response.ResponseTextString = ""
-				for _, msg := range chunked[response.MsgUUID] {
+				for msgIdx := 0; msgIdx < response.TotalChunks; msgIdx++ {
 					// collect all the messages and create a single
-					response.ResponseTextString += msg.ResponseTextString
+					response.ResponseTextString += chunked[response.MsgUUID][msgIdx].ResponseTextString
 				}
 				delete(chunked, response.MsgUUID)
 			}
+
+			dec, _ := base64.StdEncoding.DecodeString(response.ResponseTextString)
+			response.ResponseTextString = string(dec[:])
+
 			if response.ResponseType == "recvMsg" {
 				if response.NeedsAck {
 					msgAck := fmt.Sprintf(`{"senderName": "%s", "action":"msgAck"`+
