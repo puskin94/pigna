@@ -54,13 +54,16 @@ type Message struct {
 }
 
 var queueList QueueList
+var debug bool
 
-func StartServer(host, port string) {
+func StartServer(host, port string, isDebug bool) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
+
+	debug = isDebug
 
 	// Close the listener when the application closes.
 	defer l.Close()
@@ -80,7 +83,9 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		log.Println("Client sends: " + msg)
+		if debug {
+			log.Println("Client sends: " + msg)
+		}
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -276,5 +281,7 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	log.Println(message)
+	if debug {
+		log.Println(message)
+	}
 }

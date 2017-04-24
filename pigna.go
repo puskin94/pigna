@@ -215,8 +215,6 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 		var response Response
 
 		var buffer = make([]byte, chunkSize)
-		// log.Println(string(buffer[:]))
-
 		readLen, err := pignaConn.Connection.Read(buffer)
 
 		if err != nil {

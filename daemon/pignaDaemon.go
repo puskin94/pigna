@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	"github.com/puskin94/pigna/daemon/pignaDaemon"
 	"log"
+	"github.com/puskin94/pigna/daemon/pignaDaemon"
 )
 
 const (
@@ -13,11 +13,15 @@ const (
 
 func main() {
 	var port string
+	var debug bool
 
+	flag.BoolVar(&debug, "debug", false, "Display incoming and outcoming messages")
 	flag.StringVar(&port, "port", "16789", "serve on this port")
 	flag.Parse()
 
-	log.Println("Welcome to " + swName + " v. " + swVersion)
-	log.Println("Starting daemon on port", port)
-	pignaDaemon.StartServer("0.0.0.0", port)
+	if debug {
+		log.Println("Welcome to " + swName + " v. " + swVersion)
+		log.Println("Starting daemon on port", port)
+	}
+	pignaDaemon.StartServer("0.0.0.0", port, debug)
 }
