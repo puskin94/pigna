@@ -132,6 +132,21 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 	}
 }
 
+func actionHasBeenAcked(conn net.Conn, msgAct MsgAction) {
+	queueIdx, err := checkQueueName(msgAct.Queue)
+	if err != nil {
+		writeMessageString(conn, "error", "This queueName does not exists")
+		return
+	}
+	for _, q := range queueList.Queues[queueIdx].UnackedMessages {
+		if q.MsgUUID == msgAct.Message.MsgUUID {
+			writeMessageBool(conn, "success", false)
+			return
+		}
+	}
+	writeMessageBool(conn, "success", true)
+}
+
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 	_, err := checkQueueName(msgAct.Queue)
 	if err == nil {

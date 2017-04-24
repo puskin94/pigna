@@ -127,6 +127,8 @@ func handleRequest(conn net.Conn) {
 			actionSendMsg(conn, *msgAct)
 		} else if msgAct.Action == "msgAck" {
 			actionAckMessage(conn, *msgAct)
+		} else if msgAct.Action == "hasBeenAcked" {
+			actionHasBeenAcked(conn, *msgAct)
 		} else if msgAct.Action == "destroyQueue" {
 			actionDestroyQueue(conn, *msgAct)
 		} else if msgAct.Action == "removeConsumer" {
@@ -252,6 +254,7 @@ func isValidAction(action string) bool {
 		"checkQueueName",
 		"sendMsg",
 		"msgAck",
+		"hasBeenAcked",
 		"consumeQueue",
 		"removeConsumer",
 		"destroyQueue",

@@ -172,7 +172,16 @@ func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, er
 	return res, err
 }
 
-func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
+func (pignaConn PignaConnection) HasBeenAcked(queueName string, messageUUID uuid.UUID) (bool, error) {
+	hasBeenAcked := fmt.Sprintf(`{"senderName": "%s", "action":"hasBeenAcked",`+
+		`"queue":{"queueName":"%s"}, "message": {"UUID": "%s"}}`,
+		pignaConn.SenderName, queueName, messageUUID)
+	writeToClient(pignaConn.Connection, hasBeenAcked)
+	res, err := waitForResponse(pignaConn)
+	return res.ResponseTextBool, err
+}
+
+func (pignaConn PignaConnection) SendMsg(queueName string, message string) (uuid.UUID) {
 	maxMessageLen := 512
 	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
 	var messageChunks = make([]string, len(encodedMessage)/maxMessageLen+1)
@@ -195,7 +204,7 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
 			`"queue":{"queueName":"%s"}, "message": {"body": "%s", "UUID": "%s"}}`,
 			pignaConn.SenderName, queueName, encodedMessage, u1)
 		writeToClient(pignaConn.Connection, sendMsg)
-		return
+		return u1
 	}
 
 	for i := 0; i < len(messageChunks); i++ {
@@ -206,6 +215,7 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) {
 			messageChunks[i], true, i, len(messageChunks), u1)
 		writeToClient(pignaConn.Connection, sendMsg)
 	}
+	return u1
 }
 
 func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)) {
