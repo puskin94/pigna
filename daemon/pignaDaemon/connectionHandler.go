@@ -12,8 +12,8 @@ import (
 )
 
 /*
-~24s 1000000 with ack
-~17s 1000000 without ack
+~21s 1000000 with ack
+~14s 1000000 without ack
 */
 
 type MsgAction struct {
@@ -24,7 +24,7 @@ type MsgAction struct {
 }
 
 type QueueList struct {
-	Queues []Queue
+	Queues map[string]*Queue
 }
 
 type Queue struct {
@@ -64,6 +64,7 @@ func StartServer(host, port string, isDebug bool) {
 	}
 
 	debug = isDebug
+	queueList.Queues = make(map[string]*Queue)
 
 	// Close the listener when the application closes.
 	defer l.Close()
@@ -103,14 +104,8 @@ func handleRequest(conn net.Conn) {
 		if msgAct.Action == "createQueue" {
 			actionCreateQueue(conn, *msgAct)
 		} else if msgAct.Action == "checkQueueName" {
-			_, err := checkQueueName(msgAct.Queue)
-			var res bool
-			if err != nil {
-				res = false
-			} else {
-				res = true
-			}
-			writeMessageBool(conn, "success", res)
+			isPresent, _ := checkQueueName(msgAct.Queue)
+			writeMessageBool(conn, "success", isPresent)
 		} else if msgAct.Action == "consumeQueue" {
 			actionConsumeQueue(conn, *msgAct)
 		} else if msgAct.Action == "getNamesOfPaired" {
@@ -137,14 +132,13 @@ func handleRequest(conn net.Conn) {
 	}
 }
 
-func (q *QueueList) addQueue(newQueue Queue) []Queue {
-	q.Queues = append(q.Queues, newQueue)
+func (q *QueueList) addQueue(newQueue Queue) map[string]*Queue {
+	q.Queues[newQueue.QueueName] = &newQueue
 	return q.Queues
 }
 
-func (q *QueueList) destroyQueue(queueIdx int) []Queue {
-	q.Queues[queueIdx] = q.Queues[len(q.Queues)-1]
-	q.Queues = q.Queues[:len(q.Queues)-1]
+func (q *QueueList) destroyQueue(queueName string) map[string]*Queue {
+	delete(q.Queues, queueName)
 	return q.Queues
 }
 
@@ -185,23 +179,22 @@ func broadcastToQueue(q Queue, message Message) {
 	}
 }
 
-func checkConsumers(conn net.Conn, queueIdx int, consumerName string) (int, error) {
-	for idx, _ := range queueList.Queues[queueIdx].Consumers {
-		if conn == queueList.Queues[queueIdx].Consumers[idx].Connection ||
-			consumerName == queueList.Queues[queueIdx].Consumers[idx].Name {
+func checkConsumers(conn net.Conn, queueName string, consumerName string) (int, error) {
+	for idx, _ := range queueList.Queues[queueName].Consumers {
+		if conn == queueList.Queues[queueName].Consumers[idx].Connection ||
+			consumerName == queueList.Queues[queueName].Consumers[idx].Name {
 			return idx, nil
 		}
 	}
 	return -1, errors.New("No consumer on this queue")
 }
 
-func checkQueueName(queue Queue) (int, error) {
-	for idx, _ := range queueList.Queues {
-		if queue.QueueName == queueList.Queues[idx].QueueName {
-			return idx, nil
-		}
+func checkQueueName(queue Queue) (bool, error) {
+	_, isPresent := queueList.Queues[queue.QueueName]
+	if !isPresent {
+		return false, errors.New("No queue with this name")
 	}
-	return -1, errors.New("No queue with this name")
+	return true, nil
 }
 
 func copyQueueStruct(m *MsgAction, q *Queue) {
