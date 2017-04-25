@@ -87,8 +87,11 @@ func msgHandler(pignaConn pigna.PignaConnection, msg pigna.Response) {
 #### (pignaConn *PignaConnection) RemoveConsumer(queueName string)
 After consuming a queue, you need to destroy your connection from the daemon
 
-#### (pignaConn PignaConnection) SendMsg(queueName string, message string)
+#### (pignaConn PignaConnection) SendMsg(queueName string, message string) (uuid.UUID)
 This function allows you to send messages through a Pigna queue. Just specify the `queueName` and the message.
+
+#### (pignaConn PignaConnection) HasBeenAcked(queueName string, messageUUID uuid.UUID) (bool, error)
+Given an `uuid.UUID` it returns if a message has been acked or not
 
 
 
