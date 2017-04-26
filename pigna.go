@@ -77,36 +77,33 @@ func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) 
 }
 
 func (pignaConn PignaConnection) GetNumberOfPaired(queueName string) (int, error) {
-	getNumber := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"getNumOfPaired","queue":{"queueName":"` +
-		queueName + `"}}`
+	getNumber := fmt.Sprintf(`{"senderName": "%s", "action":"getNumOfPaired",`+
+		`"queue":{"queueName":"%s"}}`, pignaConn.SenderName, queueName)
 	writeToClient(pignaConn.Connection, getNumber)
 	res, err := waitForResponse(pignaConn)
 	return res.ResponseTextInt, err
 }
 
 func (pignaConn PignaConnection) GetNumberOfUnacked(queueName string) (int, error) {
-	getNumber := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"getNumOfUnacked","queue":{"queueName":"` +
-		queueName + `"}}`
+	getNumber := fmt.Sprintf(`{"senderName": "%s", "action":"getNumOfUnacked",`+
+		`"queue":{"queueName":"%s"}}`, pignaConn.SenderName, queueName)
 	writeToClient(pignaConn.Connection, getNumber)
 	res, err := waitForResponse(pignaConn)
 	return res.ResponseTextInt, err
 }
 
 func (pignaConn PignaConnection) GetNumberOfUnconsumed(queueName string) (int, error) {
-	getNumber := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"getNumOfUnconsumed","queue":{"queueName":"` +
-		queueName + `"}}`
+	getNumber := fmt.Sprintf(`{"senderName": "%s", "action":`+
+		`"getNumOfUnconsumed","queue":{"queueName":"%s"}}`,
+		pignaConn.SenderName, queueName)
 	writeToClient(pignaConn.Connection, getNumber)
 	res, err := waitForResponse(pignaConn)
 	return res.ResponseTextInt, err
 }
 
 func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, error) {
-	getNames := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"getNamesOfPaired","queue":{"queueName":"` +
-		queueName + `"}}`
+	getNames := fmt.Sprintf(`{"senderName": "%s", "action":"getNamesOfPaired",`+
+		`"queue":{"queueName":"%s"}}`, pignaConn.SenderName, queueName)
 	writeToClient(pignaConn.Connection, getNames)
 	res, err := waitForResponse(pignaConn)
 	stringSlice := strings.Split(res.ResponseTextString, ",")
@@ -115,8 +112,8 @@ func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, e
 }
 
 func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
-	getNames := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"getQueueNames","queue":{}}`
+	getNames := fmt.Sprintf(`{"senderName": "%s", "action":"getQueueNames",`+
+		`"queue":{}}`, pignaConn.SenderName)
 	writeToClient(pignaConn.Connection, getNames)
 	res, err := waitForResponse(pignaConn)
 	stringSlice := strings.Split(res.ResponseTextString, ",")
@@ -136,9 +133,8 @@ func (pignaConn PignaConnection) CreateQueue(queueName string, needsAck bool) (R
 }
 
 func (pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error) {
-	destroyQueue := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"destroyQueue","queue":{"queueName":"` +
-		queueName + `"}}`
+	destroyQueue := fmt.Sprintf(`{"senderName": "%s", "action":"destroyQueue",`+
+		`"queue":{"queueName":"%s"}}`, pignaConn.SenderName, queueName)
 	writeToClient(pignaConn.Connection, destroyQueue)
 	res, err := waitForResponse(pignaConn)
 	return res, err
@@ -147,9 +143,8 @@ func (pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error
 func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(PignaConnection, Response)) {
 	pignaConn.IsConsuming = true
 	go consume(*pignaConn, callback)
-	consumeQueue := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"consumeQueue","queue":{"queueName":"` +
-		queueName + `"}}`
+	consumeQueue := fmt.Sprintf(`{"senderName": "%s", "action":"consumeQueue",`+
+		`"queue":{"queueName":"%s"}}`, pignaConn.SenderName, queueName)
 	writeToClient(pignaConn.Connection, consumeQueue)
 	res, _ := waitForResponse(*pignaConn)
 	// stop the consuming go routine
@@ -159,9 +154,9 @@ func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(P
 }
 
 func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, error) {
-	removeConsumer := `{"senderName": "` + pignaConn.SenderName +
-		`", "action":"removeConsumer","queue":{"queueName":"` +
-		queueName + `"}}`
+	removeConsumer := fmt.Sprintf(`{"senderName": "%s", "action":`+
+		`"removeConsumer","queue":{"queueName":"%s"}}`, pignaConn.SenderName,
+		queueName)
 	writeToClient(pignaConn.Connection, removeConsumer)
 	res, err := waitForResponse(*pignaConn)
 	// stop the consuming go routine
