@@ -34,6 +34,11 @@ func actionGetNumOfUnconsumed(conn net.Conn, msgAct MsgAction) {
 	writeMessageInt(conn, "success", len(queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages))
 }
 
+func actionCheckQueueName(conn net.Conn, msgAct MsgAction) {
+	isPresent, _ := checkQueueName(msgAct.Queue)
+	writeMessageBool(conn, "success", isPresent)
+}
+
 func actionAckMessage(conn net.Conn, msgAct MsgAction) {
 	isPresent, err := checkQueueName(msgAct.Queue)
 	if !isPresent {

@@ -53,6 +53,22 @@ type Message struct {
 	SenderConn  net.Conn
 }
 
+var validActions = map[string]func(net.Conn, MsgAction) {
+	"getNumOfPaired": actionGetNumberOfPaired,
+	"createQueue": actionCreateQueue,
+	"checkQueueName": actionCheckQueueName,
+	"consumeQueue": actionConsumeQueue,
+	"getNamesOfPaired": actionGetNamesOfPaired,
+	"getQueueNames": actionGetQueueNames,
+	"getNumOfUnacked": actionGetNumOfUnacked,
+	"getNumOfUnconsumed": actionGetNumOfUnconsumed,
+	"sendMsg": actionSendMsg,
+	"msgAck": actionAckMessage,
+	"hasBeenAcked": actionHasBeenAcked,
+	"destroyQueue": actionDestroyQueue,
+	"removeConsumer": actionRemoveConsumer,
+}
+
 var queueList QueueList
 var debug bool
 
@@ -101,34 +117,7 @@ func handleRequest(conn net.Conn) {
 			return
 		}
 
-		if msgAct.Action == "createQueue" {
-			actionCreateQueue(conn, *msgAct)
-		} else if msgAct.Action == "checkQueueName" {
-			isPresent, _ := checkQueueName(msgAct.Queue)
-			writeMessageBool(conn, "success", isPresent)
-		} else if msgAct.Action == "consumeQueue" {
-			actionConsumeQueue(conn, *msgAct)
-		} else if msgAct.Action == "getNamesOfPaired" {
-			actionGetNamesOfPaired(conn, *msgAct)
-		} else if msgAct.Action == "getQueueNames" {
-			actionGetQueueNames(conn, *msgAct)
-		} else if msgAct.Action == "getNumOfPaired" {
-			actionGetNumberOfPaired(conn, *msgAct)
-		} else if msgAct.Action == "getNumOfUnacked" {
-			actionGetNumOfUnacked(conn, *msgAct)
-		} else if msgAct.Action == "getNumOfUnconsumed" {
-			actionGetNumOfUnconsumed(conn, *msgAct)
-		} else if msgAct.Action == "sendMsg" {
-			actionSendMsg(conn, *msgAct)
-		} else if msgAct.Action == "msgAck" {
-			actionAckMessage(conn, *msgAct)
-		} else if msgAct.Action == "hasBeenAcked" {
-			actionHasBeenAcked(conn, *msgAct)
-		} else if msgAct.Action == "destroyQueue" {
-			actionDestroyQueue(conn, *msgAct)
-		} else if msgAct.Action == "removeConsumer" {
-			actionRemoveConsumer(conn, *msgAct)
-		}
+		validActions[msgAct.Action](conn, *msgAct)
 	}
 }
 
@@ -206,7 +195,8 @@ func checkMsgAction(m *MsgAction) (bool, string, string) {
 	var err bool = false
 	var resText string = ""
 
-	if isValidAction(m.Action) == false {
+	_, isPresent := validActions[m.Action]
+	if !isPresent {
 		err = true
 		resText = "Invalid Action"
 	}
@@ -234,27 +224,6 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 	}
 
 	return err, "error", resText
-}
-
-func isValidAction(action string) bool {
-	switch action {
-	case
-		"getNumOfUnconsumed",
-		"getNumOfUnacked",
-		"getNamesOfPaired",
-		"getNumOfPaired",
-		"getQueueNames",
-		"checkQueueName",
-		"sendMsg",
-		"msgAck",
-		"hasBeenAcked",
-		"consumeQueue",
-		"removeConsumer",
-		"destroyQueue",
-		"createQueue":
-		return true
-	}
-	return false
 }
 
 func writeMessageString(conn net.Conn, messageType string, message string) {
