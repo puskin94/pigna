@@ -36,24 +36,24 @@ type Response struct {
 }
 
 type Request struct {
-	SenderName string  `json:"senderName"`
+	SenderName string  `json:"senderName,omitempty"`
 	Action     string  `json:"action"`
-	Queue      Queue   `json:"queue"`
-	Message    Message `json:"message"`
+	Queue      Queue   `json:"queue,omitempty"`
+	Message    Message `json:"message,omitempty"`
 }
 
 type Queue struct {
-	QueueName string `json:"queueName"`
-	NeedsAck  bool   `json:"needsAck"`
+	QueueName string `json:"queueName,omitempty"`
+	NeedsAck  bool   `json:"needsAck,omitempty"`
 }
 
 type Message struct {
-	Body        string    `json:"body"`
-	UUID        uuid.UUID `json:"UUID"`
-	IsAChunk    bool      `json:"isAChunk"`
-	NChunk      int       `json:"nChunk"`
-	TotalChunks int       `json:"totalChunks"`
-	MsgId       int       `json:"msgId"`
+	Body        string    `json:"body,omitempty"`
+	UUID        uuid.UUID `json:"UUID,omitempty"`
+	IsAChunk    bool      `json:"isAChunk,omitempty"`
+	NChunk      int       `json:"nChunk,omitempty"`
+	TotalChunks int       `json:"totalChunks,omitempty"`
+	MsgId       int       `json:"msgId,omitempty"`
 }
 
 // here will be stored the message chunks waiting to be complete
