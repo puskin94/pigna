@@ -53,73 +53,23 @@ type Message struct {
 	SenderConn  net.Conn
 }
 
-var validActions = map[string]func(net.Conn, MsgAction) {
-	"getNumOfPaired": actionGetNumberOfPaired,
-	"createQueue": actionCreateQueue,
-	"checkQueueName": actionCheckQueueName,
-	"consumeQueue": actionConsumeQueue,
-	"getNamesOfPaired": actionGetNamesOfPaired,
-	"getQueueNames": actionGetQueueNames,
-	"getNumOfUnacked": actionGetNumOfUnacked,
+var validActions = map[string]func(net.Conn, MsgAction){
+	"getNumOfPaired":     actionGetNumberOfPaired,
+	"createQueue":        actionCreateQueue,
+	"checkQueueName":     actionCheckQueueName,
+	"consumeQueue":       actionConsumeQueue,
+	"getNamesOfPaired":   actionGetNamesOfPaired,
+	"getQueueNames":      actionGetQueueNames,
+	"getNumOfUnacked":    actionGetNumOfUnacked,
 	"getNumOfUnconsumed": actionGetNumOfUnconsumed,
-	"sendMsg": actionSendMsg,
-	"msgAck": actionAckMessage,
-	"hasBeenAcked": actionHasBeenAcked,
-	"destroyQueue": actionDestroyQueue,
-	"removeConsumer": actionRemoveConsumer,
+	"sendMsg":            actionSendMsg,
+	"msgAck":             actionAckMessage,
+	"hasBeenAcked":       actionHasBeenAcked,
+	"destroyQueue":       actionDestroyQueue,
+	"removeConsumer":     actionRemoveConsumer,
 }
 
 var queueList QueueList
-var debug bool
-
-func StartServer(host, port string, isDebug bool) {
-	l, err := net.Listen("tcp", host+":"+port)
-	if err != nil {
-		log.Println("Error listening:", err.Error())
-		os.Exit(1)
-	}
-
-	debug = isDebug
-	queueList.Queues = make(map[string]*Queue)
-
-	// Close the listener when the application closes.
-	defer l.Close()
-	for {
-		conn, err := l.Accept()
-
-		if err != nil {
-			log.Println("Error accepting: ", err.Error())
-			os.Exit(1)
-		}
-
-		go handleRequest(conn)
-	}
-}
-
-func handleRequest(conn net.Conn) {
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		msg := scanner.Text()
-		if debug {
-			log.Println("Client sends: " + msg)
-		}
-
-		msgAct := new(MsgAction)
-		err := json.Unmarshal([]byte(msg), &msgAct)
-		if err != nil {
-			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
-			return
-		}
-
-		errAction, resType, resText := checkMsgAction(msgAct)
-		if errAction {
-			writeMessageString(conn, resType, resText)
-			return
-		}
-
-		validActions[msgAct.Action](conn, *msgAct)
-	}
-}
 
 func (q *QueueList) addQueue(newQueue Queue) map[string]*Queue {
 	q.Queues[newQueue.QueueName] = &newQueue
@@ -144,13 +94,57 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
+func StartServer(host, port string) {
+	l, err := net.Listen("tcp", host+":"+port)
+	if err != nil {
+		log.Println("Error listening:", err.Error())
+		os.Exit(1)
+	}
+
+	queueList.Queues = make(map[string]*Queue)
+
+	// Close the listener when the application closes.
+	defer l.Close()
+	for {
+		conn, err := l.Accept()
+
+		if err != nil {
+			log.Println("Error accepting: ", err.Error())
+			os.Exit(1)
+		}
+
+		go handleRequest(conn)
+	}
+}
+
+func handleRequest(conn net.Conn) {
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		msg := scanner.Text()
+
+		msgAct := new(MsgAction)
+		err := json.Unmarshal([]byte(msg), &msgAct)
+		if err != nil {
+			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
+			return
+		}
+
+		errAction, resType, resText := checkMsgAction(msgAct)
+		if errAction {
+			writeMessageString(conn, resType, resText)
+			return
+		}
+
+		validActions[msgAct.Action](conn, *msgAct)
+	}
+}
+
 func (q *Queue) deleteConsumer(clIdx int) []Client {
 	q.Consumers[clIdx] = q.Consumers[len(q.Consumers)-1]
 	q.Consumers = q.Consumers[:len(q.Consumers)-1]
 	return q.Consumers
 }
 
-// XXX: if a message is chunked... wait an ack before send the next chunk?
 func broadcastToQueue(q Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
@@ -246,7 +240,4 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	if debug {
-		log.Println(message)
-	}
 }

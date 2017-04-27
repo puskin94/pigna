@@ -60,7 +60,7 @@ type Message struct {
 // the key is the MsgUUID
 var chunked map[string](map[int]Response)
 
-func (req *Request) String() (string) {
+func (req *Request) String() string {
 	reqString, _ := json.Marshal(req)
 	return string(reqString)
 }
@@ -93,10 +93,10 @@ func (pignaConn PignaConnection) Disconnect() {
 }
 
 func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "checkQueueName",
-		Queue: Queue {
+		Action:     "checkQueueName",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -106,10 +106,10 @@ func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) 
 }
 
 func (pignaConn PignaConnection) GetNumberOfPaired(queueName string) (int, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "getNumOfPaired",
-		Queue: Queue {
+		Action:     "getNumOfPaired",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -119,10 +119,10 @@ func (pignaConn PignaConnection) GetNumberOfPaired(queueName string) (int, error
 }
 
 func (pignaConn PignaConnection) GetNumberOfUnacked(queueName string) (int, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "getNumOfUnacked",
-		Queue: Queue {
+		Action:     "getNumOfUnacked",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -132,10 +132,10 @@ func (pignaConn PignaConnection) GetNumberOfUnacked(queueName string) (int, erro
 }
 
 func (pignaConn PignaConnection) GetNumberOfUnconsumed(queueName string) (int, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "getNumOfUnconsumed",
-		Queue: Queue {
+		Action:     "getNumOfUnconsumed",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -145,10 +145,10 @@ func (pignaConn PignaConnection) GetNumberOfUnconsumed(queueName string) (int, e
 }
 
 func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "getNamesOfPaired",
-		Queue: Queue {
+		Action:     "getNamesOfPaired",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -160,9 +160,9 @@ func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, e
 }
 
 func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "getQueueNames",
+		Action:     "getQueueNames",
 	}
 	writeToClient(pignaConn.Connection, req.String())
 	res, err := waitForResponse(pignaConn)
@@ -172,12 +172,12 @@ func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
 }
 
 func (pignaConn PignaConnection) CreateQueue(queueName string, needsAck bool) (Response, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "createQueue",
-		Queue: Queue {
+		Action:     "createQueue",
+		Queue: Queue{
 			QueueName: queueName,
-			NeedsAck: needsAck,
+			NeedsAck:  needsAck,
 		},
 	}
 	writeToClient(pignaConn.Connection, req.String())
@@ -186,10 +186,10 @@ func (pignaConn PignaConnection) CreateQueue(queueName string, needsAck bool) (R
 }
 
 func (pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "destroyQueue",
-		Queue: Queue {
+		Action:     "destroyQueue",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -202,10 +202,10 @@ func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(P
 	pignaConn.IsConsuming = true
 	go consume(*pignaConn, callback)
 
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "consumeQueue",
-		Queue: Queue {
+		Action:     "consumeQueue",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -218,10 +218,10 @@ func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(P
 }
 
 func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "removeConsumer",
-		Queue: Queue {
+		Action:     "removeConsumer",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -236,13 +236,13 @@ func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, er
 }
 
 func (pignaConn PignaConnection) HasBeenAcked(queueName string, messageUUID uuid.UUID) (bool, error) {
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "hasBeenAcked",
-		Queue: Queue {
+		Action:     "hasBeenAcked",
+		Queue: Queue{
 			QueueName: queueName,
 		},
-		Message: Message {
+		Message: Message{
 			UUID: messageUUID,
 		},
 	}
@@ -251,7 +251,7 @@ func (pignaConn PignaConnection) HasBeenAcked(queueName string, messageUUID uuid
 	return res.ResponseTextBool, err
 }
 
-func (pignaConn PignaConnection) SendMsg(queueName string, message string) (uuid.UUID) {
+func (pignaConn PignaConnection) SendMsg(queueName string, message string) uuid.UUID {
 	maxMessageLen := 512
 	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
 	var messageChunks = make([]string, len(encodedMessage)/maxMessageLen+1)
@@ -269,13 +269,13 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) (uuid
 		}
 	} else {
 		// send as an unique message, no need to add the property to the string
-		var req Request = Request {
+		var req Request = Request{
 			SenderName: pignaConn.SenderName,
-			Action: "sendMsg",
-			Queue: Queue {
+			Action:     "sendMsg",
+			Queue: Queue{
 				QueueName: queueName,
 			},
-			Message: Message {
+			Message: Message{
 				Body: encodedMessage,
 				UUID: u1,
 			},
@@ -284,21 +284,21 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) (uuid
 		return u1
 	}
 
-	var req Request = Request {
+	var req Request = Request{
 		SenderName: pignaConn.SenderName,
-		Action: "sendMsg",
-		Queue: Queue {
+		Action:     "sendMsg",
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
 
 	for i := 0; i < len(messageChunks); i++ {
-		req.Message = Message {
-			Body: messageChunks[i],
-			IsAChunk: true,
-			NChunk: i,
+		req.Message = Message{
+			Body:        messageChunks[i],
+			IsAChunk:    true,
+			NChunk:      i,
 			TotalChunks: len(messageChunks),
-			UUID: u1,
+			UUID:        u1,
 		}
 		writeToClient(pignaConn.Connection, req.String())
 	}
@@ -361,13 +361,13 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 
 			if response.ResponseType == "recvMsg" {
 				if response.NeedsAck {
-					var req Request = Request {
+					var req Request = Request{
 						SenderName: pignaConn.SenderName,
-						Action: "msgAck",
-						Queue: Queue {
+						Action:     "msgAck",
+						Queue: Queue{
 							QueueName: response.QueueName,
 						},
-						Message: Message {
+						Message: Message{
 							MsgId: response.MsgId,
 						},
 					}
