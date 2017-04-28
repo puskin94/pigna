@@ -48,12 +48,12 @@ type Queue struct {
 }
 
 type Message struct {
-	Body        string    `json:"body,omitempty"`
-	UUID        uuid.UUID `json:"UUID,omitempty"`
-	IsAChunk    bool      `json:"isAChunk,omitempty"`
-	NChunk      int       `json:"nChunk,omitempty"`
-	TotalChunks int       `json:"totalChunks,omitempty"`
-	MsgId       int       `json:"msgId,omitempty"`
+	Body        string `json:"body,omitempty"`
+	UUID        string `json:"UUID,omitempty"`
+	IsAChunk    bool   `json:"isAChunk,omitempty"`
+	NChunk      int    `json:"nChunk,omitempty"`
+	TotalChunks int    `json:"totalChunks,omitempty"`
+	MsgId       int    `json:"msgId,omitempty"`
 }
 
 // here will be stored the message chunks waiting to be complete
@@ -243,7 +243,7 @@ func (pignaConn PignaConnection) HasBeenAcked(queueName string, messageUUID uuid
 			QueueName: queueName,
 		},
 		Message: Message{
-			UUID: messageUUID,
+			UUID: messageUUID.String(),
 		},
 	}
 	writeToClient(pignaConn.Connection, req.String())
@@ -277,7 +277,7 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) uuid.
 			},
 			Message: Message{
 				Body: encodedMessage,
-				UUID: u1,
+				UUID: u1.String(),
 			},
 		}
 		writeToClient(pignaConn.Connection, req.String())
@@ -298,7 +298,7 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) uuid.
 			IsAChunk:    true,
 			NChunk:      i,
 			TotalChunks: len(messageChunks),
-			UUID:        u1,
+			UUID:        u1.String(),
 		}
 		writeToClient(pignaConn.Connection, req.String())
 	}
