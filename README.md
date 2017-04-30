@@ -56,8 +56,14 @@ Returns an array containing the names of the client that are consuming a queue
 #### (pignaConn PignaConnection) GetQueueNames()
 Returns an array containing all the existing queues
 
-#### (pignaConn PignaConnection) CreateQueue(queueName string, needsAck bool)
-This function creates a *Queue*. You need to specify the *queueName* and a `bool` that indicates if the queue needs an `ack` or not.
+### CreateQueueStruct (queueName string) Queue
+The `Queue` struct is having multiple changes. Due to this you need to call `pigna.CreateQueueStruct` to get a basic `Queue` config. By default it sets the `NeedsAck` to false and `QueueType` to normal. You can change the `QueueType` value to these values:
+
+- normal : all the messages will be sent in broadcast to all the Consumers
+- loadBalanced : every message will be routed to Consumers using a Round Robin algorithm
+
+#### (pignaConn PignaConnection) CreateQueue(queue Queue)
+This function creates a *Queue*. You need to specify the `Queue` struct that contains infos about the `Queue` type.
 
 #### (pignaConn PignaConnection) DestroyQueue(queueName string)
 It destroys the queue from the daemon
@@ -92,6 +98,3 @@ This function allows you to send messages through a Pigna queue. Just specify th
 
 #### (pignaConn PignaConnection) HasBeenAcked(queueName string, messageUUID uuid.UUID) (bool, error)
 Given an `uuid.UUID` it returns if a message has been acked or not
-
-
-

@@ -172,15 +172,20 @@ func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
 	return stringSlice, err
 }
 
-func (pignaConn PignaConnection) CreateQueue(queueName string, queueType string, needsAck bool) (Response, error) {
+func CreateQueueStruct(queueName string) Queue {
+	queueStruct := Queue {
+		QueueName: queueName,
+		QueueType: "normal",
+		NeedsAck: false,
+	}
+	return queueStruct
+}
+
+func (pignaConn PignaConnection) CreateQueue(queue Queue) (Response, error) {
 	var req Request = Request{
 		SenderName: pignaConn.SenderName,
 		Action:     "createQueue",
-		Queue: Queue{
-			QueueName: queueName,
-			QueueType: queueType,
-			NeedsAck:  needsAck,
-		},
+		Queue: queue,
 	}
 	writeToClient(pignaConn.Connection, req.String())
 	res, err := waitForResponse(pignaConn)
