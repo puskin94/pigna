@@ -18,9 +18,14 @@ import (
 
 type MsgAction struct {
 	Action     string  `json:"action"`
-	SenderName string  `json:"senderName"`
-	Message    Message `json:"message"`
-	Queue      Queue   `json:"queue"`
+	SenderName string  `json:"senderName,omitempty"`
+	Message    Message `json:"message,omitempty"`
+	Queue      Queue   `json:"queue,omitempty"`
+}
+
+type ClusterNode struct {
+	QueueList  QueueList
+	Connection net.Conn
 }
 
 type QueueList struct {
@@ -64,14 +69,17 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"getQueueNames":      actionGetQueueNames,
 	"getNumOfUnacked":    actionGetNumOfUnacked,
 	"getNumOfUnconsumed": actionGetNumOfUnconsumed,
+	"getNumOfQueues":     actionGetNumOfQueues,
 	"sendMsg":            actionSendMsg,
 	"msgAck":             actionAckMessage,
 	"hasBeenAcked":       actionHasBeenAcked,
 	"destroyQueue":       actionDestroyQueue,
 	"removeConsumer":     actionRemoveConsumer,
+	"newClusterNode":     actionAddClusterNode,
 }
 
 var queueList QueueList
+var clusterNodes map[string]ClusterNode
 
 func (q *QueueList) addQueue(newQueue Queue) map[string]*Queue {
 	q.Queues[newQueue.QueueName] = &newQueue
@@ -96,14 +104,24 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func StartServer(host, port string) {
+func StartServer(host, port, clusterHost string) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 
+	// this pignaDaemon will be a clustered instance of a main pignaDaemon
+	if clusterHost != "" {
+		errMainPigna := askToJoinAsNodeCluster(host+":"+port, clusterHost)
+		if errMainPigna != nil {
+			log.Println("Error connecting to :", clusterHost, errMainPigna.Error())
+			return
+		}
+	}
+
 	queueList.Queues = make(map[string]*Queue)
+	clusterNodes = make(map[string]ClusterNode)
 
 	// Close the listener when the application closes.
 	defer l.Close()
@@ -117,6 +135,22 @@ func StartServer(host, port string) {
 
 		go handleRequest(conn)
 	}
+}
+
+func askToJoinAsNodeCluster(hostname, clusterHost string) error {
+	mainPigna, err := net.Dial("tcp", clusterHost)
+
+	// act like a normal pigna request
+	req := MsgAction{
+		Action: "newClusterNode",
+		Message: Message{
+			Body: hostname,
+		},
+	}
+
+	reqString, _ := json.Marshal(req)
+	sendToClient(mainPigna, string(reqString))
+	return err
 }
 
 func handleRequest(conn net.Conn) {
@@ -179,9 +213,18 @@ func checkConsumers(conn net.Conn, queueName string, consumerName string) (int, 
 }
 
 func checkQueueName(queue Queue) (bool, error) {
+	// search locally
 	_, isPresent := queueList.Queues[queue.QueueName]
 	if !isPresent {
 		return false, errors.New("No queue with this name")
+	}
+
+	// search inside cluster nodes
+	for _, node := range clusterNodes {
+		_, isPresent := node.QueueList.Queues[queue.QueueName]
+		if !isPresent {
+			return false, errors.New("No queue with this name")
+		}
 	}
 	return true, nil
 }
@@ -212,7 +255,11 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 	var resText string = ""
 
 	// `QueueName` is mandatory for every message type
-	if m.Queue.QueueName == "" && m.Action != "getQueueNames" {
+	if m.Queue.QueueName == "" &&
+		m.Action != "getQueueNames" &&
+		m.Action != "newClusterNode" &&
+		m.Action != "getNumOfQueues" {
+
 		err = true
 		resText = "Invalid queueName"
 	}

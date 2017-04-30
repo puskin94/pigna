@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"net"
 	"strings"
@@ -66,27 +65,20 @@ func (req *Request) String() string {
 	return string(reqString)
 }
 
-func Connect(host string, port string, filename string) (PignaConnection, error) {
+func Connect(hostname, senderName string) (PignaConnection, error) {
 	var pignaConn PignaConnection
 	chunked = make(map[string](map[int]Response))
 	pignaConn.ConsumingList = make(map[string]bool)
+	pignaConn.SenderName = senderName
 
-	// read the config file
-	raw, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return pignaConn, err
-	}
-
-	json.Unmarshal(raw, &pignaConn)
-
-	conn, err := net.Dial("tcp", host+":"+port)
+	conn, err := net.Dial("tcp", hostname)
 	pignaConn.Connection = conn
 	pignaConn.IsConsuming = false
 	return pignaConn, err
 }
 
 func (pignaConn PignaConnection) Disconnect() {
-	log.Println("Pigna will quit when stop consuming...")
+	// log.Println("Pigna will quit when stop consuming...")
 	for pignaConn.IsConsuming {
 		time.Sleep(1000 * time.Millisecond)
 	}
@@ -171,6 +163,17 @@ func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
 
 	return stringSlice, err
 }
+
+func (pignaConn PignaConnection) GetNumberOfQueues() (int, error) {
+	var req Request = Request{
+		SenderName: pignaConn.SenderName,
+		Action:     "getNumOfQueues",
+	}
+	writeToClient(pignaConn.Connection, req.String())
+	res, err := waitForResponse(pignaConn)
+	return res.ResponseTextInt, err
+}
+
 
 func CreateQueueStruct(queueName string) Queue {
 	queueStruct := Queue {

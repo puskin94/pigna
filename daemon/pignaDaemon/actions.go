@@ -3,7 +3,52 @@ package pignaDaemon
 import (
 	"net"
 	"strings"
+
+	// "github.com/puskin94/pigna"
 )
+
+// func actionDistributeQueues(conn net.Conn, msgAct MsgAction) {
+// 	// numQueues := len(queueList.Queues)
+// 	totNumQueues := 0
+// 	numClusterNodes := len(clusterNodes)
+//
+// 	for hostname, _ := range clusterNodes {
+// 		// // act like a normal pigna request
+// 		// req := MsgAction{
+// 		// 	Action: "getQueueNames",
+// 		// }
+// 		//
+// 		// reqString, _ := json.Marshal(req)
+// 		// sendToClient(mainPigna, string(reqString))
+// 		pignaConn, err := pigna.Connect(hostname, "")
+// 		if err != nil {
+// 			log.Println("Host " + hostname + " is unreachable!")
+// 			continue
+// 		}
+// 		num, _ := pignaConn.GetNumberOfQueues()
+//
+// 		pignaConn.Disconnect()
+// 		totNumQueues += num
+// 	}
+// }
+
+func actionAddClusterNode(conn net.Conn, msgAct MsgAction) {
+	for hostname, node := range clusterNodes {
+		if node.Connection == conn || hostname == msgAct.Message.Body {
+			// writeMessageString(conn, "error", "Already part of this cluster!")
+			return
+		}
+	}
+
+	clusterNodes[msgAct.Message.Body] = ClusterNode {
+		Connection: conn,
+	}
+	// writeMessageString(conn, "success", "Already part of this cluster!")
+}
+
+func actionGetNumOfQueues(conn net.Conn, msgAct MsgAction) {
+	writeMessageInt(conn, "success", len(queueList.Queues))
+}
 
 func actionGetQueueNames(conn net.Conn, msgAct MsgAction) {
 	var names []string
