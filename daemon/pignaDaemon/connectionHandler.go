@@ -29,12 +29,14 @@ type QueueList struct {
 
 type Queue struct {
 	QueueName          string `json:"queueName"`
+	QueueType          string `json:"queueType"`
 	NeedsAck           bool   `json:"needsAck"`
 	Consumers          []Client
 	UnconsumedMessages []Message
 	UnackedMessages    []Message
 	MutexCounter       sync.Mutex
 	MsgCounter         int
+	LastRRIdx          int
 }
 
 type Client struct {
@@ -148,18 +150,22 @@ func (q *Queue) deleteConsumer(clIdx int) []Client {
 func broadcastToQueue(q Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
-		msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", `+
-			`"responseTextString": "%s", "senderName": "%s", "msgId": %d,`+
-			`"needsAck": %v, "isAChunk": %v, "nChunk": %d, "totalChunks": %d}`,
-			q.QueueName, message.Body, message.SenderName,
-			message.MsgId, q.NeedsAck, message.IsAChunk, message.NChunk,
-			message.TotalChunks)
-
+		msg := formatMessage(q, message)
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
 		sendToClient(q.Consumers[idx].Connection, msg)
 	}
+}
+
+func formatMessage(q Queue, message Message) string {
+	msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", `+
+		`"responseTextString": "%s", "senderName": "%s", "msgId": %d,`+
+		`"needsAck": %v, "isAChunk": %v, "nChunk": %d, "totalChunks": %d}`,
+		q.QueueName, message.Body, message.SenderName,
+		message.MsgId, q.NeedsAck, message.IsAChunk, message.NChunk,
+		message.TotalChunks)
+	return msg
 }
 
 func checkConsumers(conn net.Conn, queueName string, consumerName string) (int, error) {
@@ -183,6 +189,7 @@ func checkQueueName(queue Queue) (bool, error) {
 func copyQueueStruct(m *MsgAction, q *Queue) {
 	q.QueueName = m.Queue.QueueName
 	q.NeedsAck = m.Queue.NeedsAck
+	q.QueueType = m.Queue.QueueType
 }
 
 func checkMsgAction(m *MsgAction) (bool, string, string) {

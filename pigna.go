@@ -44,6 +44,7 @@ type Request struct {
 
 type Queue struct {
 	QueueName string `json:"queueName,omitempty"`
+	QueueType string `json:"queueType"`
 	NeedsAck  bool   `json:"needsAck,omitempty"`
 }
 
@@ -171,12 +172,13 @@ func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
 	return stringSlice, err
 }
 
-func (pignaConn PignaConnection) CreateQueue(queueName string, needsAck bool) (Response, error) {
+func (pignaConn PignaConnection) CreateQueue(queueName string, queueType string, needsAck bool) (Response, error) {
 	var req Request = Request{
 		SenderName: pignaConn.SenderName,
 		Action:     "createQueue",
 		Queue: Queue{
 			QueueName: queueName,
+			QueueType: queueType,
 			NeedsAck:  needsAck,
 		},
 	}

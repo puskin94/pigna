@@ -110,7 +110,6 @@ func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
 
 	writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
 		" destroyed")
-
 }
 
 func actionSendMsg(conn net.Conn, msgAct MsgAction) {
@@ -123,17 +122,32 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 	msgAct.Message.SenderConn = conn
 	msgAct.Message.SenderName = msgAct.SenderName
 
-	queueList.Queues[msgAct.Queue.QueueName].MutexCounter.Lock()
-	queueList.Queues[msgAct.Queue.QueueName].MsgCounter++
-	msgAct.Message.MsgId = queueList.Queues[msgAct.Queue.QueueName].MsgCounter
-	queueList.Queues[msgAct.Queue.QueueName].MutexCounter.Unlock()
+	queue := queueList.Queues[msgAct.Queue.QueueName]
 
-	// if there are no `Consumers`, add to the queue
-	if len(queueList.Queues[msgAct.Queue.QueueName].Consumers) == 0 {
-		queueList.Queues[msgAct.Queue.QueueName].addUnconsumedMessage(msgAct.Message)
-	} else {
-		broadcastToQueue(*queueList.Queues[msgAct.Queue.QueueName],
-			msgAct.Message)
+	queue.MutexCounter.Lock()
+	queue.MsgCounter++
+	msgAct.Message.MsgId = queue.MsgCounter
+	queue.MutexCounter.Unlock()
+
+	// "normal" == send messages to all
+	if queue.QueueType == "normal" {
+		// if there are no `Consumers`, add to the queue
+		if len(queue.Consumers) == 0 {
+			queue.addUnconsumedMessage(msgAct.Message)
+		} else {
+			broadcastToQueue(*queue,
+				msgAct.Message)
+		}
+	// "loadBalanced" == send messages to connections in RoundRobin mode
+	} else if queue.QueueType == "loadBalanced" {
+		msg := formatMessage(*queue, msgAct.Message)
+		sendToClient(queue.Consumers[queue.LastRRIdx-1].Connection, msg)
+		// circolar list
+		if queue.LastRRIdx % len(queue.Consumers) == 0 {
+			queue.LastRRIdx = 1
+		} else {
+			queue.LastRRIdx++
+		}
 	}
 }
 
@@ -158,9 +172,21 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 		writeMessageString(conn, "error", "This queueName already exists")
 		return
 	}
+
+	var validQueueTypes = map[string]bool{
+		"normal": true,
+		"loadBalanced": true,
+	}
+
+	_, isValid := validQueueTypes[msgAct.Queue.QueueType]
+	if !isValid {
+		writeMessageString(conn, "error", "Invalid queue type")
+		return
+	}
 	var newQueue Queue
 	newQueue.MsgCounter = 0
 	newQueue.NeedsAck = false
+	newQueue.LastRRIdx = 1
 	copyQueueStruct(&msgAct, &newQueue)
 	queueList.addQueue(newQueue)
 	writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
