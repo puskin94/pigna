@@ -3,8 +3,8 @@ package pignaDaemon
 import (
 	"net"
 	"strings"
-
-	// "github.com/puskin94/pigna"
+	"log"
+	"github.com/puskin94/pigna"
 )
 
 // func actionDistributeQueues(conn net.Conn, msgAct MsgAction) {
@@ -40,10 +40,12 @@ func actionAddClusterNode(conn net.Conn, msgAct MsgAction) {
 		}
 	}
 
+	var queueList QueueList
+	queueList.Queues = make(map[string]*Queue)
 	clusterNodes[msgAct.Message.Body] = ClusterNode {
 		Connection: conn,
+		QueueList: &queueList,
 	}
-	// writeMessageString(conn, "success", "Already part of this cluster!")
 }
 
 func actionGetNumOfQueues(conn net.Conn, msgAct MsgAction) {
@@ -228,23 +230,63 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 		writeMessageString(conn, "error", "Invalid queue type")
 		return
 	}
+
+	// if there are available cluster nodes, distribute new Queues
+	// just add the new queue to who owns the minimum number
+	min := len(queueList.Queues)
+	selectedHostname := ""
+	for hostname, _ := range clusterNodes {
+		log.Println(hostname)
+		log.Println(clusterNodes)
+		log.Println(clusterNodes[hostname])
+		numQueues := len(clusterNodes[hostname].QueueList.Queues)
+		if numQueues < min {
+			selectedHostname = hostname
+		}
+	}
+
 	var newQueue Queue
 	newQueue.MsgCounter = 0
 	newQueue.NeedsAck = false
 	newQueue.LastRRIdx = 1
 	copyQueueStruct(&msgAct, &newQueue)
-	queueList.addQueue(newQueue)
-	writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
-		" created successfully")
+
+	// this local node owns the minimum number of queue
+	if selectedHostname == "" {
+		log.Println("aggiungo in locale")
+		queueList.addQueue(newQueue)
+		writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
+			" created successfully")
+	} else {
+		log.Println("aggiungo all'host " + selectedHostname)
+		// update the local cache
+		clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
+		// warn the cluster node to add the new queue
+		pignaConn, err := pigna.Connect(selectedHostname, "")
+		if err != nil {
+			log.Println("Host " + selectedHostname + " is unreachable!")
+			return
+		}
+		queueStruct := pigna.CreateQueueStruct(msgAct.Queue.QueueName)
+		queueStruct.NeedsAck = msgAct.Queue.NeedsAck
+		queueStruct.QueueType = msgAct.Queue.QueueType
+		pignaConn.CreateQueue(queueStruct)
+	}
 }
 
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	var consumerHasChangedSocket bool = false
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, clusterNode, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
 	}
+
+	// the queue to Consume is on another pignaDaemon!
+	if clusterNode != "" {
+
+	}
+
 	consumerIdx, err := checkConsumers(conn, msgAct.Queue.QueueName, msgAct.SenderName)
 
 	if err == nil {
@@ -261,7 +303,7 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	// adding the connection to the proper queue `Consumers` only if there is a new socket
 	if !consumerHasChangedSocket {
 		queueList.Queues[msgAct.Queue.QueueName].addConsumer(conn, msgAct.SenderName)
-		writeMessageString(conn, "success", "Consuming the queue")
+		writeMessageString(conn, "success", "")
 	}
 
 	// clear the queue sending the `UnconsumedMessages`

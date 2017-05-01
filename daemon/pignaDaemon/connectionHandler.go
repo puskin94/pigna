@@ -24,7 +24,7 @@ type MsgAction struct {
 }
 
 type ClusterNode struct {
-	QueueList  QueueList
+	QueueList  *QueueList
 	Connection net.Conn
 }
 
@@ -104,7 +104,7 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func StartServer(host, port, clusterHost string) {
+func StartServer(host, port, clusterHost, thisHost string) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
@@ -112,8 +112,8 @@ func StartServer(host, port, clusterHost string) {
 	}
 
 	// this pignaDaemon will be a clustered instance of a main pignaDaemon
-	if clusterHost != "" {
-		errMainPigna := askToJoinAsNodeCluster(host+":"+port, clusterHost)
+	if clusterHost != "" && thisHost != "" {
+		errMainPigna := askToJoinAsNodeCluster(thisHost, clusterHost)
 		if errMainPigna != nil {
 			log.Println("Error connecting to :", clusterHost, errMainPigna.Error())
 			return
@@ -137,14 +137,14 @@ func StartServer(host, port, clusterHost string) {
 	}
 }
 
-func askToJoinAsNodeCluster(hostname, clusterHost string) error {
+func askToJoinAsNodeCluster(thisHost, clusterHost string) error {
 	mainPigna, err := net.Dial("tcp", clusterHost)
 
 	// act like a normal pigna request
 	req := MsgAction{
 		Action: "newClusterNode",
 		Message: Message{
-			Body: hostname,
+			Body: thisHost,
 		},
 	}
 
@@ -157,6 +157,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
+		log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -212,21 +213,21 @@ func checkConsumers(conn net.Conn, queueName string, consumerName string) (int, 
 	return -1, errors.New("No consumer on this queue")
 }
 
-func checkQueueName(queue Queue) (bool, error) {
+func checkQueueName(queue Queue) (bool, string, error) {
 	// search locally
-	_, isPresent := queueList.Queues[queue.QueueName]
-	if !isPresent {
-		return false, errors.New("No queue with this name")
+	_, isPresentLocally := queueList.Queues[queue.QueueName]
+	if isPresentLocally {
+		return true, "", nil
 	}
 
 	// search inside cluster nodes
-	for _, node := range clusterNodes {
-		_, isPresent := node.QueueList.Queues[queue.QueueName]
-		if !isPresent {
-			return false, errors.New("No queue with this name")
+	for hostname, node := range clusterNodes {
+		_, isPresentOnCluster := node.QueueList.Queues[queue.QueueName]
+		if isPresentOnCluster {
+			return true, hostname, nil
 		}
 	}
-	return true, nil
+	return false, "", errors.New("No queue with this name")
 }
 
 func copyQueueStruct(m *MsgAction, q *Queue) {

@@ -16,7 +16,13 @@ type PignaConnection struct {
 	Connection    net.Conn
 	SenderName    string `json:"senderName"`
 	IsConsuming   bool
-	ConsumingList map[string]bool
+	ConsumingList map[string]*ConsumingServer
+}
+
+type ConsumingServer struct {
+	Hostname         string
+	IsConsuming      bool
+	ClusterPignaConn PignaConnection
 }
 
 type Response struct {
@@ -68,7 +74,7 @@ func (req *Request) String() string {
 func Connect(hostname, senderName string) (PignaConnection, error) {
 	var pignaConn PignaConnection
 	chunked = make(map[string](map[int]Response))
-	pignaConn.ConsumingList = make(map[string]bool)
+	pignaConn.ConsumingList = make(map[string]*ConsumingServer)
 	pignaConn.SenderName = senderName
 
 	conn, err := net.Dial("tcp", hostname)
@@ -209,9 +215,6 @@ func (pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error
 }
 
 func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(PignaConnection, Response)) {
-	pignaConn.IsConsuming = true
-	go consume(*pignaConn, callback)
-
 	var req Request = Request{
 		SenderName: pignaConn.SenderName,
 		Action:     "consumeQueue",
@@ -223,7 +226,27 @@ func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(P
 	res, _ := waitForResponse(*pignaConn)
 	// stop the consuming go routine
 	if res.ResponseType == "success" {
-		pignaConn.ConsumingList[queueName] = true
+		pignaConn.ConsumingList[queueName] = &ConsumingServer {
+			IsConsuming: true,
+			Hostname: "",
+		}
+		// XXX: CONSUME MORE THAN A QUEUE? ADAPT WITH THE NEW STRUCTURE
+		pignaConn.IsConsuming = true
+		// the queue is managed from a cluster node
+		if res.ResponseTextString != "" {
+			clusterPignaConn, err := Connect(res.ResponseTextString, pignaConn.SenderName)
+			if err != nil {
+				log.Println(err.Error())
+				delete(pignaConn.ConsumingList, queueName)
+				return
+			}
+			pignaConn.ConsumingList[queueName].Hostname = res.ResponseTextString
+			pignaConn.ConsumingList[queueName].ClusterPignaConn = clusterPignaConn
+
+			go consume(clusterPignaConn, callback)
+		} else {
+			go consume(*pignaConn, callback)
+		}
 	}
 }
 
@@ -238,9 +261,11 @@ func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, er
 	writeToClient(pignaConn.Connection, req.String())
 	res, err := waitForResponse(*pignaConn)
 	// stop the consuming go routine
+	// XXX: consuming more than a queue?
 	pignaConn.IsConsuming = false
-	if res.ResponseType == "success" && pignaConn.ConsumingList[queueName] {
-		pignaConn.ConsumingList[queueName] = false
+	_, isConsuming := pignaConn.ConsumingList[queueName]
+	if res.ResponseType == "success" && isConsuming {
+		delete(pignaConn.ConsumingList, queueName)
 	}
 	return res, err
 }
