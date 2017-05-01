@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"time"
+	"errors"
 
 	"github.com/satori/go.uuid"
 )
@@ -16,13 +17,6 @@ type PignaConnection struct {
 	Connection    net.Conn
 	SenderName    string `json:"senderName"`
 	IsConsuming   bool
-	ConsumingList map[string]*ConsumingServer
-}
-
-type ConsumingServer struct {
-	Hostname         string
-	IsConsuming      bool
-	ClusterPignaConn PignaConnection
 }
 
 type Response struct {
@@ -48,9 +42,12 @@ type Request struct {
 }
 
 type Queue struct {
-	QueueName string `json:"queueName,omitempty"`
-	QueueType string `json:"queueType"`
-	NeedsAck  bool   `json:"needsAck,omitempty"`
+	QueueName     string `json:"queueName,omitempty"`
+	QueueType     string `json:"queueType"`
+	NeedsAck      bool   `json:"needsAck,omitempty"`
+	HostOwner     string
+	IsConsuming   bool
+	ConnHostOwner PignaConnection
 }
 
 type Message struct {
@@ -62,6 +59,9 @@ type Message struct {
 	MsgId       int    `json:"msgId,omitempty"`
 }
 
+var localQueueList map[string]*Queue
+var senderName string
+
 // here will be stored the message chunks waiting to be complete
 // the key is the MsgUUID
 var chunked map[string](map[int]Response)
@@ -71,20 +71,20 @@ func (req *Request) String() string {
 	return string(reqString)
 }
 
-func Connect(hostname, senderName string) (PignaConnection, error) {
+func Connect(hostname, sn string) (PignaConnection, error) {
 	var pignaConn PignaConnection
+
 	chunked = make(map[string](map[int]Response))
-	pignaConn.ConsumingList = make(map[string]*ConsumingServer)
-	pignaConn.SenderName = senderName
+	localQueueList = make(map[string]*Queue)
 
 	conn, err := net.Dial("tcp", hostname)
+
 	pignaConn.Connection = conn
-	pignaConn.IsConsuming = false
+	senderName = sn
 	return pignaConn, err
 }
 
 func (pignaConn PignaConnection) Disconnect() {
-	// log.Println("Pigna will quit when stop consuming...")
 	for pignaConn.IsConsuming {
 		time.Sleep(1000 * time.Millisecond)
 	}
@@ -93,66 +93,69 @@ func (pignaConn PignaConnection) Disconnect() {
 
 func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "checkQueueName",
-		Queue: Queue{
+		Queue: Queue {
 			QueueName: queueName,
 		},
 	}
+
+	_, isPresentLocally := localQueueList[queueName]
+
 	writeToClient(pignaConn.Connection, req.String())
 	res, err := waitForResponse(pignaConn)
-	return res.ResponseTextBool, err
+
+	if !res.ResponseTextBool {
+		// delete local cache
+		if isPresentLocally {
+			delete(localQueueList, queueName)
+		}
+		return false, errors.New("No queue with this name")
+	}
+	return true, err
 }
 
-func (pignaConn PignaConnection) GetNumberOfPaired(queueName string) (int, error) {
+func (q Queue) GetNumberOfPaired() (int, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "getNumOfPaired",
-		Queue: Queue{
-			QueueName: queueName,
-		},
+		Queue: q,
 	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, err := waitForResponse(pignaConn)
+	writeToClient(q.ConnHostOwner.Connection, req.String())
+	res, err := waitForResponse(q.ConnHostOwner)
 	return res.ResponseTextInt, err
 }
 
-func (pignaConn PignaConnection) GetNumberOfUnacked(queueName string) (int, error) {
+func (q Queue) GetNumberOfUnacked() (int, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "getNumOfUnacked",
-		Queue: Queue{
-			QueueName: queueName,
-		},
+		Queue: q,
 	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, err := waitForResponse(pignaConn)
+	writeToClient(q.ConnHostOwner.Connection, req.String())
+	res, err := waitForResponse(q.ConnHostOwner)
 	return res.ResponseTextInt, err
 }
 
-func (pignaConn PignaConnection) GetNumberOfUnconsumed(queueName string) (int, error) {
+func (q Queue) GetNumberOfUnconsumed() (int, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "getNumOfUnconsumed",
-		Queue: Queue{
-			QueueName: queueName,
-		},
+		Queue: q,
 	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, err := waitForResponse(pignaConn)
+	writeToClient(q.ConnHostOwner.Connection, req.String())
+	res, err := waitForResponse(q.ConnHostOwner)
 	return res.ResponseTextInt, err
 }
 
-func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, error) {
+func (q Queue) GetNamesOfPaired() ([]string, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "getNamesOfPaired",
-		Queue: Queue{
-			QueueName: queueName,
-		},
+		Queue: q,
 	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, err := waitForResponse(pignaConn)
+	writeToClient(q.ConnHostOwner.Connection, req.String())
+	res, err := waitForResponse(q.ConnHostOwner)
 	stringSlice := strings.Split(res.ResponseTextString, ",")
 
 	return stringSlice, err
@@ -160,7 +163,7 @@ func (pignaConn PignaConnection) GetNamesOfPaired(queueName string) ([]string, e
 
 func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "getQueueNames",
 	}
 	writeToClient(pignaConn.Connection, req.String())
@@ -172,7 +175,7 @@ func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
 
 func (pignaConn PignaConnection) GetNumberOfQueues() (int, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "getNumOfQueues",
 	}
 	writeToClient(pignaConn.Connection, req.String())
@@ -180,6 +183,27 @@ func (pignaConn PignaConnection) GetNumberOfQueues() (int, error) {
 	return res.ResponseTextInt, err
 }
 
+func (pignaConn PignaConnection) GetQueue(queueName string) (Queue, error) {
+	var req Request = Request{
+		SenderName: senderName,
+		Action:     "getQueue",
+		Queue:      Queue{
+			QueueName: queueName,
+		},
+	}
+	writeToClient(pignaConn.Connection, req.String())
+	res, err := waitForResponse(pignaConn)
+	var queue Queue
+	if err != nil {
+		return queue, err
+	}
+	if res.ResponseType == "error" {
+		return queue, errors.New(res.ResponseTextString)
+	}
+
+	err = json.Unmarshal([]byte(res.ResponseTextString), &queue)
+	return queue, err
+}
 
 func CreateQueueStruct(queueName string) Queue {
 	queueStruct := Queue {
@@ -190,103 +214,104 @@ func CreateQueueStruct(queueName string) Queue {
 	return queueStruct
 }
 
-func (pignaConn PignaConnection) CreateQueue(queue Queue) (Response, error) {
+func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "createQueue",
-		Queue: queue,
+		Queue: q,
 	}
 	writeToClient(pignaConn.Connection, req.String())
 	res, err := waitForResponse(pignaConn)
-	return res, err
-}
-
-func (pignaConn PignaConnection) DestroyQueue(queueName string) (Response, error) {
-	var req Request = Request{
-		SenderName: pignaConn.SenderName,
-		Action:     "destroyQueue",
-		Queue: Queue{
-			QueueName: queueName,
-		},
-	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, err := waitForResponse(pignaConn)
-	return res, err
-}
-
-func (pignaConn *PignaConnection) ConsumeQueue(queueName string, callback func(PignaConnection, Response)) {
-	var req Request = Request{
-		SenderName: pignaConn.SenderName,
-		Action:     "consumeQueue",
-		Queue: Queue{
-			QueueName: queueName,
-		},
-	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, _ := waitForResponse(*pignaConn)
-	// stop the consuming go routine
 	if res.ResponseType == "success" {
-		pignaConn.ConsumingList[queueName] = &ConsumingServer {
-			IsConsuming: true,
-			Hostname: "",
-		}
-		// XXX: CONSUME MORE THAN A QUEUE? ADAPT WITH THE NEW STRUCTURE
-		pignaConn.IsConsuming = true
-		// the queue is managed from a cluster node
-		if res.ResponseTextString != "" {
-			clusterPignaConn, err := Connect(res.ResponseTextString, pignaConn.SenderName)
-			if err != nil {
-				log.Println(err.Error())
-				delete(pignaConn.ConsumingList, queueName)
-				return
-			}
-			pignaConn.ConsumingList[queueName].Hostname = res.ResponseTextString
-			pignaConn.ConsumingList[queueName].ClusterPignaConn = clusterPignaConn
+		localQueueList[q.QueueName] = &q
+		localQueueList[q.QueueName].HostOwner = res.ResponseTextString
 
-			go consume(clusterPignaConn, callback)
+		conn, err := Connect(res.ResponseTextString, senderName)
+		if err != nil {
+			localQueueList[q.QueueName].ConnHostOwner = conn
 		} else {
-			go consume(*pignaConn, callback)
+			delete(localQueueList, q.QueueName)
+			return q, errors.New("Cannot connect to the host "+
+				res.ResponseTextString)
 		}
 	}
+
+	return *localQueueList[q.QueueName], err
 }
 
-func (pignaConn *PignaConnection) RemoveConsumer(queueName string) (Response, error) {
+func (q Queue) DestroyQueue() (Response, error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
-		Action:     "removeConsumer",
-		Queue: Queue{
-			QueueName: queueName,
-		},
+		SenderName: senderName,
+		Action:     "destroyQueue",
+		Queue: q,
 	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, err := waitForResponse(*pignaConn)
-	// stop the consuming go routine
-	// XXX: consuming more than a queue?
-	pignaConn.IsConsuming = false
-	_, isConsuming := pignaConn.ConsumingList[queueName]
-	if res.ResponseType == "success" && isConsuming {
-		delete(pignaConn.ConsumingList, queueName)
+	writeToClient(q.ConnHostOwner.Connection, req.String())
+	res, err := waitForResponse(q.ConnHostOwner)
+	_, isPresent := localQueueList[q.QueueName]
+	if isPresent {
+		delete(localQueueList, q.QueueName)
 	}
 	return res, err
 }
 
-func (pignaConn PignaConnection) HasBeenAcked(queueName string, messageUUID uuid.UUID) (bool, error) {
+func (q Queue) ConsumeQueue(callback func(PignaConnection, Response)) (error) {
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
+		Action:     "consumeQueue",
+		Queue: q,
+	}
+
+	_, isPresent := localQueueList[q.QueueName]
+	if !isPresent {
+		return errors.New("This queue does not exists locally")
+	}
+
+	writeToClient(q.ConnHostOwner.Connection, req.String())
+	res, _ := waitForResponse(q.ConnHostOwner)
+
+	if res.ResponseType == "success" {
+		localQueueList[q.QueueName].IsConsuming = true
+		go consume(q.ConnHostOwner, callback)
+	}
+	return nil
+}
+
+func (q Queue) RemoveConsumer() (Response, error) {
+	var req Request = Request{
+		SenderName: senderName,
+		Action:     "removeConsumer",
+		Queue: q,
+	}
+
+
+	writeToClient(q.ConnHostOwner.Connection, req.String())
+	res, err := waitForResponse(q.ConnHostOwner)
+
+	_, isPresent := localQueueList[q.QueueName]
+	if !isPresent {
+		return res, errors.New("This queue does not exists locally")
+	}
+	if res.ResponseType == "success" && localQueueList[q.QueueName].IsConsuming {
+		delete(localQueueList, q.QueueName)
+	}
+	return res, err
+}
+
+func (q Queue) HasBeenAcked(messageUUID uuid.UUID) (bool, error) {
+	var req Request = Request{
+		SenderName: senderName,
 		Action:     "hasBeenAcked",
-		Queue: Queue{
-			QueueName: queueName,
-		},
+		Queue: q,
 		Message: Message{
 			UUID: messageUUID.String(),
 		},
 	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, err := waitForResponse(pignaConn)
+	writeToClient(q.ConnHostOwner.Connection, req.String())
+	res, err := waitForResponse(q.ConnHostOwner)
 	return res.ResponseTextBool, err
 }
 
-func (pignaConn PignaConnection) SendMsg(queueName string, message string) uuid.UUID {
+func (q Queue) SendMsg(message string) uuid.UUID {
 	maxMessageLen := 512
 	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
 	var messageChunks = make([]string, len(encodedMessage)/maxMessageLen+1)
@@ -305,26 +330,22 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) uuid.
 	} else {
 		// send as an unique message, no need to add the property to the string
 		var req Request = Request{
-			SenderName: pignaConn.SenderName,
+			SenderName: senderName,
 			Action:     "sendMsg",
-			Queue: Queue{
-				QueueName: queueName,
-			},
+			Queue: q,
 			Message: Message{
 				Body: encodedMessage,
 				UUID: u1.String(),
 			},
 		}
-		writeToClient(pignaConn.Connection, req.String())
+		writeToClient(q.ConnHostOwner.Connection, req.String())
 		return u1
 	}
 
 	var req Request = Request{
-		SenderName: pignaConn.SenderName,
+		SenderName: senderName,
 		Action:     "sendMsg",
-		Queue: Queue{
-			QueueName: queueName,
-		},
+		Queue: q,
 	}
 
 	for i := 0; i < len(messageChunks); i++ {
@@ -335,7 +356,7 @@ func (pignaConn PignaConnection) SendMsg(queueName string, message string) uuid.
 			TotalChunks: len(messageChunks),
 			UUID:        u1.String(),
 		}
-		writeToClient(pignaConn.Connection, req.String())
+		writeToClient(q.ConnHostOwner.Connection, req.String())
 	}
 	return u1
 }
@@ -397,7 +418,7 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 			if response.ResponseType == "recvMsg" {
 				if response.NeedsAck {
 					var req Request = Request{
-						SenderName: pignaConn.SenderName,
+						SenderName: senderName,
 						Action:     "msgAck",
 						Queue: Queue{
 							QueueName: response.QueueName,

@@ -76,8 +76,10 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"destroyQueue":       actionDestroyQueue,
 	"removeConsumer":     actionRemoveConsumer,
 	"newClusterNode":     actionAddClusterNode,
+	"getQueue":           actionGetQueue,
 }
 
+var thisHost string
 var queueList QueueList
 var clusterNodes map[string]ClusterNode
 
@@ -104,16 +106,18 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func StartServer(host, port, clusterHost, thisHost string) {
+func StartServer(host, port, clusterHost, th string) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 
+	thisHost = th
+
 	// this pignaDaemon will be a clustered instance of a main pignaDaemon
 	if clusterHost != "" && thisHost != "" {
-		errMainPigna := askToJoinAsNodeCluster(thisHost, clusterHost)
+		errMainPigna := askToJoinAsNodeCluster(clusterHost)
 		if errMainPigna != nil {
 			log.Println("Error connecting to :", clusterHost, errMainPigna.Error())
 			return
@@ -137,7 +141,7 @@ func StartServer(host, port, clusterHost, thisHost string) {
 	}
 }
 
-func askToJoinAsNodeCluster(thisHost, clusterHost string) error {
+func askToJoinAsNodeCluster(clusterHost string) error {
 	mainPigna, err := net.Dial("tcp", clusterHost)
 
 	// act like a normal pigna request
