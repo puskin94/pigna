@@ -5,6 +5,7 @@ import (
 	"strings"
 	"log"
 	"encoding/json"
+	"encoding/base64"
 	"github.com/puskin94/pigna"
 )
 
@@ -84,10 +85,11 @@ func actionGetNumOfUnconsumed(conn net.Conn, msgAct MsgAction) {
 
 func actionCheckQueueName(conn net.Conn, msgAct MsgAction) {
 	isPresent, _, _ := checkQueueName(msgAct.Queue)
-	if isPresent {
+	if !isPresent {
 		writeMessageBool(conn, "error", false)
+	} else {
+		writeMessageBool(conn, "success", true)
 	}
-	writeMessageBool(conn, "success", true)
 }
 
 func actionGetQueue(conn net.Conn, msgAct MsgAction) {
@@ -132,7 +134,7 @@ func actionGetQueue(conn net.Conn, msgAct MsgAction) {
 	}
 
 	queueString, _ := json.Marshal(pignaQueue)
-	writeMessageString(conn, "success", string(queueString))
+	writeMessageStringEncoded(conn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
 }
 
 func actionAckMessage(conn net.Conn, msgAct MsgAction) {

@@ -285,6 +285,12 @@ func writeMessageString(conn net.Conn, messageType string, message string) {
 	sendToClient(conn, msg)
 }
 
+func writeMessageStringEncoded(conn net.Conn, messageType string, message string) {
+	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextStringEncoded": "%s"}`,
+		messageType, message)
+	sendToClient(conn, msg)
+}
+
 func writeMessageInt(conn net.Conn, messageType string, message int) {
 	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextInt": %d}`,
 		messageType, message)
@@ -299,4 +305,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
+	log.Println(message)
 }

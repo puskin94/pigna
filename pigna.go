@@ -14,24 +14,24 @@ import (
 )
 
 type PignaConnection struct {
-	Connection    net.Conn
-	SenderName    string `json:"senderName"`
-	IsConsuming   bool
+	Connection    net.Conn `json:"connection,omitempty"`
+	IsConsuming   bool     `json:"isConsuming,omitempty"`
 }
 
 type Response struct {
-	ResponseType       string `json:"responseType"`
-	ResponseTextString string `json:"responseTextString"`
-	ResponseTextInt    int    `json:"responseTextInt"`
-	ResponseTextBool   bool   `json:"ResponseTextBool"`
-	SenderName         string `json:"senderName"`
-	QueueName          string `json:"queueName"`
-	MsgId              int    `json:"msgId"`
-	MsgUUID            string `json:"UUID"`
-	NeedsAck           bool   `json:"needsAck"`
-	IsAChunk           bool   `json:"isAChunk"`
-	NChunk             int    `json:"nChunk"`
-	TotalChunks        int    `json:"totalChunks"`
+	ResponseType              string `json:"responseType"`
+	ResponseTextString        string `json:"responseTextString"`
+	ResponseTextStringEncoded string `json:"responseTextStringEncoded"`
+	ResponseTextInt           int    `json:"responseTextInt"`
+	ResponseTextBool          bool   `json:"ResponseTextBool"`
+	SenderName                string `json:"senderName"`
+	QueueName                 string `json:"queueName"`
+	MsgId                     int    `json:"msgId"`
+	MsgUUID                   string `json:"UUID"`
+	NeedsAck                  bool   `json:"needsAck"`
+	IsAChunk                  bool   `json:"isAChunk"`
+	NChunk                    int    `json:"nChunk"`
+	TotalChunks               int    `json:"totalChunks"`
 }
 
 type Request struct {
@@ -42,12 +42,12 @@ type Request struct {
 }
 
 type Queue struct {
-	QueueName     string `json:"queueName,omitempty"`
-	QueueType     string `json:"queueType"`
-	NeedsAck      bool   `json:"needsAck,omitempty"`
-	HostOwner     string
-	IsConsuming   bool
-	ConnHostOwner PignaConnection
+	QueueName     string          `json:"queueName,omitempty"`
+	QueueType     string          `json:"queueType,omitempty"`
+	NeedsAck      bool            `json:"needsAck,omitempty"`
+	HostOwner     string          `json:"hostOwner,omitempty"`
+	IsConsuming   bool            `json:"isConsuming,omitempty"`
+	ConnHostOwner PignaConnection `json:"connHostOwner,omitempty"`
 }
 
 type Message struct {
@@ -74,8 +74,12 @@ func (req *Request) String() string {
 func Connect(hostname, sn string) (PignaConnection, error) {
 	var pignaConn PignaConnection
 
-	chunked = make(map[string](map[int]Response))
-	localQueueList = make(map[string]*Queue)
+	if chunked == nil {
+		chunked = make(map[string](map[int]Response))
+	}
+	if localQueueList == nil {
+		localQueueList = make(map[string]*Queue)
+	}
 
 	conn, err := net.Dial("tcp", hostname)
 
@@ -85,7 +89,16 @@ func Connect(hostname, sn string) (PignaConnection, error) {
 }
 
 func (pignaConn PignaConnection) Disconnect() {
-	for pignaConn.IsConsuming {
+	for ;; {
+		keepConsuming := false
+		for _, queue := range localQueueList {
+			if queue.IsConsuming {
+				keepConsuming = true
+			}
+		}
+		if !keepConsuming {
+			break
+		}
 		time.Sleep(1000 * time.Millisecond)
 	}
 	pignaConn.Connection.Close()
@@ -201,8 +214,24 @@ func (pignaConn PignaConnection) GetQueue(queueName string) (Queue, error) {
 		return queue, errors.New(res.ResponseTextString)
 	}
 
-	err = json.Unmarshal([]byte(res.ResponseTextString), &queue)
-	return queue, err
+	dec, _ := base64.StdEncoding.DecodeString(res.ResponseTextStringEncoded)
+
+	err = json.Unmarshal([]byte(dec), &queue)
+	localQueueList[queue.QueueName] = &queue
+	// this is the main pignaDaemon
+	// check if it is empty
+	if queue.HostOwner == "" {
+		localQueueList[queue.QueueName].ConnHostOwner = pignaConn
+	} else {
+		conn, err := Connect(queue.HostOwner, senderName)
+		if err != nil {
+			delete(localQueueList, queue.QueueName)
+			return queue, errors.New("Cannot connect to the host "+
+				queue.HostOwner)
+		}
+		localQueueList[queue.QueueName].ConnHostOwner = conn
+	}
+	return *localQueueList[queue.QueueName], err
 }
 
 func CreateQueueStruct(queueName string) Queue {
@@ -222,18 +251,18 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 	}
 	writeToClient(pignaConn.Connection, req.String())
 	res, err := waitForResponse(pignaConn)
+
 	if res.ResponseType == "success" {
 		localQueueList[q.QueueName] = &q
 		localQueueList[q.QueueName].HostOwner = res.ResponseTextString
 
 		conn, err := Connect(res.ResponseTextString, senderName)
 		if err != nil {
-			localQueueList[q.QueueName].ConnHostOwner = conn
-		} else {
 			delete(localQueueList, q.QueueName)
 			return q, errors.New("Cannot connect to the host "+
 				res.ResponseTextString)
 		}
+		localQueueList[q.QueueName].ConnHostOwner = conn
 	}
 
 	return *localQueueList[q.QueueName], err
