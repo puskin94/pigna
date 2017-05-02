@@ -283,7 +283,7 @@ func (q Queue) DestroyQueue() (Response, error) {
 	return res, err
 }
 
-func (q Queue) ConsumeQueue(callback func(PignaConnection, Response)) (error) {
+func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "consumeQueue",
@@ -300,7 +300,7 @@ func (q Queue) ConsumeQueue(callback func(PignaConnection, Response)) (error) {
 
 	if res.ResponseType == "success" {
 		localQueueList[q.QueueName].IsConsuming = true
-		go consume(q.ConnHostOwner, callback)
+		go consume(q, callback)
 	}
 	return nil
 }
@@ -390,14 +390,14 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 	return u1
 }
 
-func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)) {
+func consume(q Queue, callback func(Queue, Response)) {
 	chunkSize := 1024
 	broken := ""
-	for pignaConn.IsConsuming {
+	for localQueueList[q.QueueName].IsConsuming {
 		var response Response
 
 		var buffer = make([]byte, chunkSize)
-		readLen, err := pignaConn.Connection.Read(buffer)
+		readLen, err := q.ConnHostOwner.Connection.Read(buffer)
 
 		if err != nil {
 			log.Println("Connection closed by the server. Shutting down")
@@ -456,9 +456,9 @@ func consume(pignaConn PignaConnection, callback func(PignaConnection, Response)
 							MsgId: response.MsgId,
 						},
 					}
-					writeToClient(pignaConn.Connection, req.String())
+					writeToClient(q.ConnHostOwner.Connection, req.String())
 				}
-				callback(pignaConn, response)
+				callback(q, response)
 			}
 		}
 	}

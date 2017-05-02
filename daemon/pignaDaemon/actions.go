@@ -265,6 +265,14 @@ func actionHasBeenAcked(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
+
+	// just route the message
+	clientConn, needsResponse := waitingForCreateResponse[msgAct.Queue.QueueName]
+	if needsResponse {
+		writeMessageString(clientConn, "success", msgAct.Queue.HostOwner)
+		return
+	}
+
 	isPresent, _, _ := checkQueueName(msgAct.Queue)
 	if isPresent {
 		writeMessageString(conn, "error", "This queueName already exists")
@@ -299,23 +307,40 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 	copyQueueStruct(&msgAct, &newQueue)
 
 	// this local node owns the minimum number of queue
+	var pignaConn pigna.PignaConnection
+	var queueStruct pigna.Queue
+	var err error
 	if selectedHostname == "" {
 		queueList.addQueue(newQueue)
-		writeMessageString(conn, "success", thisHost)
-	} else {
-		// update the local cache
-		clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
-		// warn the cluster node to add the new queue
-		pignaConn, err := pigna.Connect(selectedHostname, "")
+		if !thisIsANode {
+			writeMessageString(conn, "success", thisHost)
+			return
+		}
+		// this node cannot reply to che creator. Using the main pignaDaemon
+		// to route the message
+		pignaConn, err = pigna.Connect(clusterHost, "")
 		if err != nil {
 			log.Println("Host " + selectedHostname + " is unreachable!")
 			return
 		}
-		queueStruct := pigna.CreateQueueStruct(msgAct.Queue.QueueName)
-		queueStruct.NeedsAck = msgAct.Queue.NeedsAck
-		queueStruct.QueueType = msgAct.Queue.QueueType
-		pignaConn.CreateQueue(queueStruct)
+		queueStruct = pigna.CreateQueueStruct(msgAct.Queue.QueueName)
+		queueStruct.HostOwner = thisHost
+
+	} else {
+		// update the local cache
+		clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
+		// warn the cluster node to add the new queue
+		pignaConn, err = pigna.Connect(selectedHostname, "")
+		if err != nil {
+			log.Println("Host " + selectedHostname + " is unreachable!")
+			return
+		}
+		// the response message will be routed using this pignaDaemon
+		queueStruct = pigna.CreateQueueStruct(msgAct.Queue.QueueName)
+
+		waitingForCreateResponse[msgAct.Queue.QueueName] = conn
 	}
+	pignaConn.CreateQueue(queueStruct)
 }
 
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {

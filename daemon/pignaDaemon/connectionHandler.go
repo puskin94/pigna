@@ -36,6 +36,7 @@ type Queue struct {
 	QueueName          string `json:"queueName"`
 	QueueType          string `json:"queueType"`
 	NeedsAck           bool   `json:"needsAck"`
+	HostOwner          string `json:"hostOwner,omitempty"`
 	Consumers          []Client
 	UnconsumedMessages []Message
 	UnackedMessages    []Message
@@ -80,8 +81,11 @@ var validActions = map[string]func(net.Conn, MsgAction){
 }
 
 var thisHost string
+var thisIsANode bool
+var clusterHost string
 var queueList QueueList
 var clusterNodes map[string]ClusterNode
+var waitingForCreateResponse map[string]net.Conn
 
 func (q *QueueList) addQueue(newQueue Queue) map[string]*Queue {
 	q.Queues[newQueue.QueueName] = &newQueue
@@ -106,7 +110,7 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func StartServer(host, port, clusterHost, th string) {
+func StartServer(host, port, ch, th string) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
@@ -114,6 +118,7 @@ func StartServer(host, port, clusterHost, th string) {
 	}
 
 	thisHost = th
+	clusterHost = ch
 
 	// this pignaDaemon will be a clustered instance of a main pignaDaemon
 	if clusterHost != "" && thisHost != "" {
@@ -122,10 +127,12 @@ func StartServer(host, port, clusterHost, th string) {
 			log.Println("Error connecting to :", clusterHost, errMainPigna.Error())
 			return
 		}
+		thisIsANode = true
 	}
 
 	queueList.Queues = make(map[string]*Queue)
 	clusterNodes = make(map[string]ClusterNode)
+	waitingForCreateResponse = make(map[string]net.Conn)
 
 	// Close the listener when the application closes.
 	defer l.Close()
@@ -161,7 +168,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		log.Println(msg)
+		// log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -305,5 +312,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	log.Println(message)
+	// log.Println(message)
 }
