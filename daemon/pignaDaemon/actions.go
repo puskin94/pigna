@@ -265,14 +265,6 @@ func actionHasBeenAcked(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
-
-	// just route the message
-	clientConn, needsResponse := waitingForCreateResponse[msgAct.Queue.QueueName]
-	if needsResponse {
-		writeMessageString(clientConn, "success", msgAct.Queue.HostOwner)
-		return
-	}
-
 	isPresent, _, _ := checkQueueName(msgAct.Queue)
 	if isPresent {
 		writeMessageString(conn, "error", "This queueName already exists")
@@ -305,42 +297,33 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 	newQueue.MsgCounter = 0
 	newQueue.LastRRIdx = 1
 	copyQueueStruct(&msgAct, &newQueue)
-
 	// this local node owns the minimum number of queue
-	var pignaConn pigna.PignaConnection
-	var queueStruct pigna.Queue
-	var err error
 	if selectedHostname == "" {
 		queueList.addQueue(newQueue)
-		if !thisIsANode {
-			writeMessageString(conn, "success", thisHost)
-			return
+		var ret string
+		var clientConn net.Conn
+		if thisIsANode {
+			ret = thisHost
+			clientConn = msgAct.Queue.ClientConn
+		} else {
+			ret = ""
+			clientConn = conn
 		}
-		// this node cannot reply to che creator. Using the main pignaDaemon
-		// to route the message
-		pignaConn, err = pigna.Connect(clusterHost, "")
-		if err != nil {
-			log.Println("Host " + selectedHostname + " is unreachable!")
-			return
-		}
-		queueStruct = pigna.CreateQueueStruct(msgAct.Queue.QueueName)
-		queueStruct.HostOwner = thisHost
-
+		writeMessageString(clientConn, "success", ret)
 	} else {
 		// update the local cache
 		clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
-		// warn the cluster node to add the new queue
-		pignaConn, err = pigna.Connect(selectedHostname, "")
+		pignaConn, err := pigna.Connect(selectedHostname, "")
 		if err != nil {
 			log.Println("Host " + selectedHostname + " is unreachable!")
 			return
 		}
-		// the response message will be routed using this pignaDaemon
-		queueStruct = pigna.CreateQueueStruct(msgAct.Queue.QueueName)
-
-		waitingForCreateResponse[msgAct.Queue.QueueName] = conn
+		queueStruct := pigna.CreateQueueStruct(msgAct.Queue.QueueName)
+		queueStruct.QueueType = msgAct.Queue.QueueType
+		queueStruct.NeedsAck = msgAct.Queue.NeedsAck
+		queueStruct.ClientConn = conn
+		pignaConn.CreateQueue(queueStruct)
 	}
-	pignaConn.CreateQueue(queueStruct)
 }
 
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
@@ -353,7 +336,8 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 
 	// the queue to Consume is on another pignaDaemon!
 	if clusterNode != "" {
-
+		writeMessageString(conn, "error", "This queue is in another daemon")
+		return
 	}
 
 	consumerIdx, err := checkConsumers(conn, msgAct.Queue.QueueName, msgAct.SenderName)

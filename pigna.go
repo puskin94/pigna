@@ -48,6 +48,7 @@ type Queue struct {
 	HostOwner     string          `json:"hostOwner,omitempty"`
 	IsConsuming   bool            `json:"isConsuming,omitempty"`
 	ConnHostOwner PignaConnection `json:"connHostOwner,omitempty"`
+	ClientConn    net.Conn        `json:"clientConn,omitempty"`
 }
 
 type Message struct {
@@ -256,13 +257,18 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 		localQueueList[q.QueueName] = &q
 		localQueueList[q.QueueName].HostOwner = res.ResponseTextString
 
-		conn, err := Connect(res.ResponseTextString, senderName)
-		if err != nil {
-			delete(localQueueList, q.QueueName)
-			return q, errors.New("Cannot connect to the host "+
-				res.ResponseTextString)
+		if res.ResponseTextString == "" {
+			localQueueList[q.QueueName].ConnHostOwner = pignaConn
+		} else {
+			conn, err := Connect(res.ResponseTextString, senderName)
+			if err != nil {
+				delete(localQueueList, q.QueueName)
+				return q, errors.New("Cannot connect to the host "+
+					res.ResponseTextString)
+			}
+			localQueueList[q.QueueName].ConnHostOwner = conn
 		}
-		localQueueList[q.QueueName].ConnHostOwner = conn
+
 	}
 
 	return *localQueueList[q.QueueName], err

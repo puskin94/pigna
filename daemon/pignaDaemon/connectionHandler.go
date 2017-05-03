@@ -33,10 +33,11 @@ type QueueList struct {
 }
 
 type Queue struct {
-	QueueName          string `json:"queueName"`
-	QueueType          string `json:"queueType"`
-	NeedsAck           bool   `json:"needsAck"`
-	HostOwner          string `json:"hostOwner,omitempty"`
+	QueueName          string   `json:"queueName"`
+	QueueType          string   `json:"queueType"`
+	NeedsAck           bool     `json:"needsAck"`
+	HostOwner          string   `json:"hostOwner,omitempty"`
+	ClientConn         net.Conn `json:"clientConn,omitempty"`
 	Consumers          []Client
 	UnconsumedMessages []Message
 	UnackedMessages    []Message
