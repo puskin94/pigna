@@ -111,18 +111,22 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func StartServer(host, port, ch, th string) {
+func StartServer(host, port, ch string) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 
-	thisHost = th
-	clusterHost = ch
+	thisHost, ipErr := getLocalIp()
+	if ipErr != nil {
+		log.Println("Error getting local ip")
+		return
+	}
 
 	// this pignaDaemon will be a clustered instance of a main pignaDaemon
-	if clusterHost != "" && thisHost != "" {
+	if ch != "" && thisHost != "" {
+		clusterHost = ch
 		errMainPigna := askToJoinAsNodeCluster(clusterHost)
 		if errMainPigna != nil {
 			log.Println("Error connecting to :", clusterHost, errMainPigna.Error())
@@ -169,7 +173,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		// log.Println(msg)
+		log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -287,6 +291,22 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 	return err, "error", resText
 }
 
+func getLocalIp() (string, error) {
+	addrs, err := net.InterfaceAddrs()
+    if err != nil {
+        return "", err
+    }
+    for _, address := range addrs {
+        // check the address type and if it is not a loopback then display it
+        if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+            if ipnet.IP.To4() != nil {
+                return ipnet.IP.String(), nil
+            }
+        }
+    }
+    return "", err
+}
+
 func writeMessageString(conn net.Conn, messageType string, message string) {
 	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextString": "%s"}`,
 		messageType, message)
@@ -313,5 +333,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	// log.Println(message)
+	log.Println(message)
 }

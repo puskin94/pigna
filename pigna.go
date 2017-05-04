@@ -268,7 +268,6 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 			}
 			localQueueList[q.QueueName].ConnHostOwner = conn
 		}
-
 	}
 
 	return *localQueueList[q.QueueName], err
