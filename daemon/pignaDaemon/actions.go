@@ -265,10 +265,12 @@ func actionHasBeenAcked(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
-	isPresent, _, _ := checkQueueName(msgAct.Queue)
-	if isPresent {
-		writeMessageString(conn, "error", "This queueName already exists")
-		return
+	if !thisIsANode {
+		isPresent, _, _ := checkQueueName(msgAct.Queue)
+		if isPresent {
+			writeMessageString(conn, "error", "This queueName already exists")
+			return
+		}
 	}
 
 	var validQueueTypes = map[string]bool{
@@ -356,8 +358,8 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	// adding the connection to the proper queue `Consumers` only if there is a new socket
 	if !consumerHasChangedSocket {
 		queueList.Queues[msgAct.Queue.QueueName].addConsumer(conn, msgAct.SenderName)
-		writeMessageString(conn, "success", "")
 	}
+	writeMessageString(conn, "success", "")
 
 	// clear the queue sending the `UnconsumedMessages`
 	for _, _ = range queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages {
