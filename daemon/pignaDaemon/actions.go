@@ -3,7 +3,56 @@ package pignaDaemon
 import (
 	"net"
 	"strings"
+	"log"
+	"encoding/json"
+	"encoding/base64"
+	"github.com/puskin94/pigna"
 )
+
+// func actionDistributeQueues(conn net.Conn, msgAct MsgAction) {
+// 	// numQueues := len(queueList.Queues)
+// 	totNumQueues := 0
+// 	numClusterNodes := len(clusterNodes)
+//
+// 	for hostname, _ := range clusterNodes {
+// 		// // act like a normal pigna request
+// 		// req := MsgAction{
+// 		// 	Action: "getQueueNames",
+// 		// }
+// 		//
+// 		// reqString, _ := json.Marshal(req)
+// 		// sendToClient(mainPigna, string(reqString))
+// 		pignaConn, err := pigna.Connect(hostname, "")
+// 		if err != nil {
+// 			log.Println("Host " + hostname + " is unreachable!")
+// 			continue
+// 		}
+// 		num, _ := pignaConn.GetNumberOfQueues()
+//
+// 		pignaConn.Disconnect()
+// 		totNumQueues += num
+// 	}
+// }
+
+func actionAddClusterNode(conn net.Conn, msgAct MsgAction) {
+	for hostname, node := range clusterNodes {
+		if node.Connection == conn || hostname == msgAct.Message.Body {
+			// writeMessageString(conn, "error", "Already part of this cluster!")
+			return
+		}
+	}
+
+	var queueList QueueList
+	queueList.Queues = make(map[string]*Queue)
+	clusterNodes[msgAct.Message.Body] = ClusterNode {
+		Connection: conn,
+		QueueList: &queueList,
+	}
+}
+
+func actionGetNumOfQueues(conn net.Conn, msgAct MsgAction) {
+	writeMessageInt(conn, "success", len(queueList.Queues))
+}
 
 func actionGetQueueNames(conn net.Conn, msgAct MsgAction) {
 	var names []string
@@ -17,7 +66,7 @@ func actionGetQueueNames(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionGetNumOfUnacked(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -26,7 +75,7 @@ func actionGetNumOfUnacked(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionGetNumOfUnconsumed(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -35,12 +84,61 @@ func actionGetNumOfUnconsumed(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionCheckQueueName(conn net.Conn, msgAct MsgAction) {
-	isPresent, _ := checkQueueName(msgAct.Queue)
-	writeMessageBool(conn, "success", isPresent)
+	isPresent, _, _ := checkQueueName(msgAct.Queue)
+	if !isPresent {
+		writeMessageBool(conn, "error", false)
+	} else {
+		writeMessageBool(conn, "success", true)
+	}
+}
+
+func actionGetQueue(conn net.Conn, msgAct MsgAction) {
+	// if res.ResponseTextString == "" {
+	// 	host := pignaConn
+	// } else {
+	// 	host, err := Connect(res.ResponseTextString, senderName)
+	// 	if err != nil {
+	// 		localQueueList[q.QueueName].ConnHostOwner = conn
+	// 	} else {
+	// 		return queue, errors.New("Cannot connect to the host "+
+	// 			res.ResponseTextString)
+	// 	}
+	// }
+	isPresent, host, err := checkQueueName(msgAct.Queue)
+	if !isPresent {
+		writeMessageString(conn, "error", err.Error())
+		return
+	}
+	// the queue is here locally
+	var queue Queue
+	if host == "" {
+		queue = *queueList.Queues[msgAct.Queue.QueueName]
+	} else {
+		queue = *clusterNodes[host].QueueList.Queues[msgAct.Queue.QueueName]
+	}
+
+	type PignaQueue struct {
+		QueueName     string          `json:"queueName"`
+		QueueType     string          `json:"queueType"`
+		NeedsAck      bool            `json:"needsAck"`
+		HostOwner     string          `json:"hostOwner"`
+		IsConsuming   bool            `json:"isConsuming"`
+	}
+
+	var pignaQueue PignaQueue = PignaQueue {
+		QueueName: queue.QueueName,
+		QueueType: queue.QueueType,
+		NeedsAck: queue.NeedsAck,
+		HostOwner: host,
+		IsConsuming: false,
+	}
+
+	queueString, _ := json.Marshal(pignaQueue)
+	writeMessageStringEncoded(conn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
 }
 
 func actionAckMessage(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -59,7 +157,7 @@ func actionAckMessage(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -75,7 +173,7 @@ func actionGetNamesOfPaired(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionGetNumberOfPaired(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -84,7 +182,7 @@ func actionGetNumberOfPaired(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -101,7 +199,7 @@ func actionRemoveConsumer(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -113,7 +211,7 @@ func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionSendMsg(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -152,7 +250,7 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionHasBeenAcked(conn net.Conn, msgAct MsgAction) {
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, _, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
@@ -167,10 +265,12 @@ func actionHasBeenAcked(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
-	isPresent, _ := checkQueueName(msgAct.Queue)
-	if isPresent {
-		writeMessageString(conn, "error", "This queueName already exists")
-		return
+	if !thisIsANode {
+		isPresent, _, _ := checkQueueName(msgAct.Queue)
+		if isPresent {
+			writeMessageString(conn, "error", "This queueName already exists")
+			return
+		}
 	}
 
 	var validQueueTypes = map[string]bool{
@@ -183,23 +283,65 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 		writeMessageString(conn, "error", "Invalid queue type")
 		return
 	}
+
+	// if there are available cluster nodes, distribute new Queues
+	// just add the new queue to who owns the minimum number
+	min := len(queueList.Queues)
+	selectedHostname := ""
+	for hostname, _ := range clusterNodes {
+		numQueues := len(clusterNodes[hostname].QueueList.Queues)
+		if numQueues < min {
+			selectedHostname = hostname
+		}
+	}
+
 	var newQueue Queue
 	newQueue.MsgCounter = 0
-	newQueue.NeedsAck = false
 	newQueue.LastRRIdx = 1
 	copyQueueStruct(&msgAct, &newQueue)
-	queueList.addQueue(newQueue)
-	writeMessageString(conn, "success", "Queue "+msgAct.Queue.QueueName+
-		" created successfully")
+	// this local node owns the minimum number of queue
+	if selectedHostname == "" {
+		queueList.addQueue(newQueue)
+		var ret string
+		var clientConn net.Conn
+		if thisIsANode {
+			ret = thisHost
+			clientConn = msgAct.Queue.ClientConn
+		} else {
+			ret = ""
+			clientConn = conn
+		}
+		writeMessageString(clientConn, "success", ret)
+	} else {
+		// update the local cache
+		clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
+		pignaConn, err := pigna.Connect(selectedHostname, "")
+		if err != nil {
+			log.Println("Host " + selectedHostname + " is unreachable!")
+			return
+		}
+		queueStruct := pigna.CreateQueueStruct(msgAct.Queue.QueueName)
+		queueStruct.QueueType = msgAct.Queue.QueueType
+		queueStruct.NeedsAck = msgAct.Queue.NeedsAck
+		queueStruct.ClientConn = conn
+		pignaConn.CreateQueue(queueStruct)
+	}
 }
 
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	var consumerHasChangedSocket bool = false
-	isPresent, err := checkQueueName(msgAct.Queue)
+	isPresent, clusterNode, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
 		return
 	}
+
+	// the queue to Consume is on another pignaDaemon!
+	if clusterNode != "" {
+		writeMessageString(conn, "error", "This queue is in another daemon")
+		return
+	}
+
 	consumerIdx, err := checkConsumers(conn, msgAct.Queue.QueueName, msgAct.SenderName)
 
 	if err == nil {
@@ -216,8 +358,8 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	// adding the connection to the proper queue `Consumers` only if there is a new socket
 	if !consumerHasChangedSocket {
 		queueList.Queues[msgAct.Queue.QueueName].addConsumer(conn, msgAct.SenderName)
-		writeMessageString(conn, "success", "Consuming the queue")
 	}
+	writeMessageString(conn, "success", "")
 
 	// clear the queue sending the `UnconsumedMessages`
 	for _, _ = range queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages {

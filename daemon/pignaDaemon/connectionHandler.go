@@ -18,9 +18,14 @@ import (
 
 type MsgAction struct {
 	Action     string  `json:"action"`
-	SenderName string  `json:"senderName"`
-	Message    Message `json:"message"`
-	Queue      Queue   `json:"queue"`
+	SenderName string  `json:"senderName,omitempty"`
+	Message    Message `json:"message,omitempty"`
+	Queue      Queue   `json:"queue,omitempty"`
+}
+
+type ClusterNode struct {
+	QueueList  *QueueList
+	Connection net.Conn
 }
 
 type QueueList struct {
@@ -28,9 +33,11 @@ type QueueList struct {
 }
 
 type Queue struct {
-	QueueName          string `json:"queueName"`
-	QueueType          string `json:"queueType"`
-	NeedsAck           bool   `json:"needsAck"`
+	QueueName          string   `json:"queueName"`
+	QueueType          string   `json:"queueType"`
+	NeedsAck           bool     `json:"needsAck"`
+	HostOwner          string   `json:"hostOwner,omitempty"`
+	ClientConn         net.Conn `json:"clientConn,omitempty"`
 	Consumers          []Client
 	UnconsumedMessages []Message
 	UnackedMessages    []Message
@@ -64,14 +71,22 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"getQueueNames":      actionGetQueueNames,
 	"getNumOfUnacked":    actionGetNumOfUnacked,
 	"getNumOfUnconsumed": actionGetNumOfUnconsumed,
+	"getNumOfQueues":     actionGetNumOfQueues,
 	"sendMsg":            actionSendMsg,
 	"msgAck":             actionAckMessage,
 	"hasBeenAcked":       actionHasBeenAcked,
 	"destroyQueue":       actionDestroyQueue,
 	"removeConsumer":     actionRemoveConsumer,
+	"newClusterNode":     actionAddClusterNode,
+	"getQueue":           actionGetQueue,
 }
 
+var thisHost string
+var thisIsANode bool
+var clusterHost string
 var queueList QueueList
+var clusterNodes map[string]ClusterNode
+var waitingForCreateResponse map[string]net.Conn
 
 func (q *QueueList) addQueue(newQueue Queue) map[string]*Queue {
 	q.Queues[newQueue.QueueName] = &newQueue
@@ -96,14 +111,33 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func StartServer(host, port string) {
+func StartServer(host, port, ch string) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 
+	thisHost, ipErr := getLocalIp()
+	if ipErr != nil {
+		log.Println("Error getting local ip")
+		return
+	}
+
+	// this pignaDaemon will be a clustered instance of a main pignaDaemon
+	if ch != "" && thisHost != "" {
+		clusterHost = ch
+		errMainPigna := askToJoinAsNodeCluster(clusterHost)
+		if errMainPigna != nil {
+			log.Println("Error connecting to :", clusterHost, errMainPigna.Error())
+			return
+		}
+		thisIsANode = true
+	}
+
 	queueList.Queues = make(map[string]*Queue)
+	clusterNodes = make(map[string]ClusterNode)
+	waitingForCreateResponse = make(map[string]net.Conn)
 
 	// Close the listener when the application closes.
 	defer l.Close()
@@ -119,10 +153,27 @@ func StartServer(host, port string) {
 	}
 }
 
+func askToJoinAsNodeCluster(clusterHost string) error {
+	mainPigna, err := net.Dial("tcp", clusterHost)
+
+	// act like a normal pigna request
+	req := MsgAction{
+		Action: "newClusterNode",
+		Message: Message{
+			Body: thisHost,
+		},
+	}
+
+	reqString, _ := json.Marshal(req)
+	sendToClient(mainPigna, string(reqString))
+	return err
+}
+
 func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
+		log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -178,12 +229,21 @@ func checkConsumers(conn net.Conn, queueName string, consumerName string) (int, 
 	return -1, errors.New("No consumer on this queue")
 }
 
-func checkQueueName(queue Queue) (bool, error) {
-	_, isPresent := queueList.Queues[queue.QueueName]
-	if !isPresent {
-		return false, errors.New("No queue with this name")
+func checkQueueName(queue Queue) (bool, string, error) {
+	// search locally
+	_, isPresentLocally := queueList.Queues[queue.QueueName]
+	if isPresentLocally {
+		return true, "", nil
 	}
-	return true, nil
+
+	// search inside cluster nodes
+	for hostname, node := range clusterNodes {
+		_, isPresentOnCluster := node.QueueList.Queues[queue.QueueName]
+		if isPresentOnCluster {
+			return true, hostname, nil
+		}
+	}
+	return false, "", errors.New("No queue with this name")
 }
 
 func copyQueueStruct(m *MsgAction, q *Queue) {
@@ -212,7 +272,11 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 	var resText string = ""
 
 	// `QueueName` is mandatory for every message type
-	if m.Queue.QueueName == "" && m.Action != "getQueueNames" {
+	if m.Queue.QueueName == "" &&
+		m.Action != "getQueueNames" &&
+		m.Action != "newClusterNode" &&
+		m.Action != "getNumOfQueues" {
+
 		err = true
 		resText = "Invalid queueName"
 	}
@@ -227,8 +291,30 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 	return err, "error", resText
 }
 
+func getLocalIp() (string, error) {
+	addrs, err := net.InterfaceAddrs()
+    if err != nil {
+        return "", err
+    }
+    for _, address := range addrs {
+        // check the address type and if it is not a loopback then display it
+        if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+            if ipnet.IP.To4() != nil {
+                return ipnet.IP.String(), nil
+            }
+        }
+    }
+    return "", err
+}
+
 func writeMessageString(conn net.Conn, messageType string, message string) {
 	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextString": "%s"}`,
+		messageType, message)
+	sendToClient(conn, msg)
+}
+
+func writeMessageStringEncoded(conn net.Conn, messageType string, message string) {
+	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextStringEncoded": "%s"}`,
 		messageType, message)
 	sendToClient(conn, msg)
 }
@@ -247,4 +333,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
+	log.Println(message)
 }

@@ -13,11 +13,14 @@ const (
 
 func main() {
 	var port string
+	var clusterHost string
 
 	flag.StringVar(&port, "port", "16789", "serve on this port")
+	flag.StringVar(&clusterHost, "clusterHost", "", "the main pignaDaemon host:port")
+
 	flag.Parse()
 
 	log.Println("Welcome to " + swName + " v. " + swVersion)
 	log.Println("Starting daemon on port", port)
-	pignaDaemon.StartServer("0.0.0.0", port)
+	pignaDaemon.StartServer("0.0.0.0", port, clusterHost)
 }
