@@ -26,6 +26,7 @@ type MsgAction struct {
 type ClusterNode struct {
 	QueueList  *QueueList
 	Connection net.Conn
+	Port       string
 }
 
 type QueueList struct {
@@ -47,8 +48,8 @@ type Queue struct {
 }
 
 type Client struct {
-	Connection net.Conn
-	Name       string
+	ForwardConn net.Conn
+	Name        string
 }
 
 type Message struct {
@@ -81,9 +82,11 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"getQueue":           actionGetQueue,
 }
 
+var thisPort string
 var thisHost string
 var thisIsANode bool
 var clusterHost string
+var clusterPort string
 var queueList QueueList
 var clusterNodes map[string]ClusterNode
 var waitingForCreateResponse map[string]net.Conn
@@ -98,9 +101,9 @@ func (q *QueueList) destroyQueue(queueName string) map[string]*Queue {
 	return q.Queues
 }
 
-func (q *Queue) addConsumer(conn net.Conn, senderName string) []Client {
+func (q *Queue) addConsumer(forwardConn net.Conn, senderName string) []Client {
 	var c Client
-	c.Connection = conn
+	c.ForwardConn = forwardConn
 	c.Name = senderName
 	q.Consumers = append(q.Consumers, c)
 	return q.Consumers
@@ -111,13 +114,13 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func StartServer(host, port, ch string) {
+func StartServer(host, port, ch, cp string) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
-
+	thisPort = port
 	thisHost, ipErr := getLocalIp()
 	if ipErr != nil {
 		log.Println("Error getting local ip")
@@ -125,9 +128,10 @@ func StartServer(host, port, ch string) {
 	}
 
 	// this pignaDaemon will be a clustered instance of a main pignaDaemon
-	if ch != "" && thisHost != "" {
+	if ch != "" && thisHost != "" && cp != "" {
 		clusterHost = ch
-		errMainPigna := askToJoinAsNodeCluster(clusterHost)
+		clusterPort = cp
+		errMainPigna := askToJoinAsNodeCluster(ch, cp)
 		if errMainPigna != nil {
 			log.Println("Error connecting to :", clusterHost, errMainPigna.Error())
 			return
@@ -153,10 +157,11 @@ func StartServer(host, port, ch string) {
 	}
 }
 
-func askToJoinAsNodeCluster(clusterHost string) error {
-	mainPigna, err := net.Dial("tcp", clusterHost)
+func askToJoinAsNodeCluster(clusterHost, clusterPort string) error {
+	mainPigna, err := net.Dial("tcp", clusterHost+":"+clusterPort)
 
 	// act like a normal pigna request
+	log.Println(thisHost)
 	req := MsgAction{
 		Action: "newClusterNode",
 		Message: Message{
@@ -205,7 +210,7 @@ func broadcastToQueue(q Queue, message Message) {
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
-		sendToClient(q.Consumers[idx].Connection, msg)
+		sendToClient(q.Consumers[idx].ForwardConn, msg)
 	}
 }
 
@@ -221,7 +226,7 @@ func formatMessage(q Queue, message Message) string {
 
 func checkConsumers(conn net.Conn, queueName string, consumerName string) (int, error) {
 	for idx, _ := range queueList.Queues[queueName].Consumers {
-		if conn == queueList.Queues[queueName].Consumers[idx].Connection ||
+		if conn == queueList.Queues[queueName].Consumers[idx].ForwardConn ||
 			consumerName == queueList.Queues[queueName].Consumers[idx].Name {
 			return idx, nil
 		}
@@ -305,6 +310,11 @@ func getLocalIp() (string, error) {
         }
     }
     return "", err
+}
+
+func getHostname(conn net.Conn) string {
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", conn.RemoteAddr().String())
+	return tcpAddr.IP.String()
 }
 
 func writeMessageString(conn net.Conn, messageType string, message string) {

@@ -9,13 +9,15 @@ import (
 	"strings"
 	"time"
 	"errors"
+	"strconv"
 
 	"github.com/satori/go.uuid"
 )
 
 type PignaConnection struct {
-	Connection    net.Conn `json:"connection,omitempty"`
-	IsConsuming   bool     `json:"isConsuming,omitempty"`
+	Connection net.Conn `json:"connection,omitempty"`
+	Hostname   string   `json:"hostname,omitempty"`
+	Port       string   `json:"port,omitempty"`
 }
 
 type Response struct {
@@ -23,7 +25,7 @@ type Response struct {
 	ResponseTextString        string `json:"responseTextString"`
 	ResponseTextStringEncoded string `json:"responseTextStringEncoded"`
 	ResponseTextInt           int    `json:"responseTextInt"`
-	ResponseTextBool          bool   `json:"ResponseTextBool"`
+	ResponseTextBool          bool   `json:"responseTextBool"`
 	SenderName                string `json:"senderName"`
 	QueueName                 string `json:"queueName"`
 	MsgId                     int    `json:"msgId"`
@@ -46,8 +48,10 @@ type Queue struct {
 	QueueType     string          `json:"queueType,omitempty"`
 	NeedsAck      bool            `json:"needsAck,omitempty"`
 	HostOwner     string          `json:"hostOwner,omitempty"`
+	PortOwner     string          `json:"portOwner,omitempty"`
 	IsConsuming   bool            `json:"isConsuming,omitempty"`
 	ConnHostOwner PignaConnection `json:"connHostOwner,omitempty"`
+	ForwardConn   PignaConnection `json:"forwardConn,omitempty"`
 	ClientConn    net.Conn        `json:"clientConn,omitempty"`
 }
 
@@ -72,7 +76,7 @@ func (req *Request) String() string {
 	return string(reqString)
 }
 
-func Connect(hostname, sn string) (PignaConnection, error) {
+func Connect(hostname, port, sn string) (PignaConnection, error) {
 	var pignaConn PignaConnection
 
 	if chunked == nil {
@@ -82,9 +86,11 @@ func Connect(hostname, sn string) (PignaConnection, error) {
 		localQueueList = make(map[string]*Queue)
 	}
 
-	conn, err := net.Dial("tcp", hostname)
+	conn, err := net.Dial("tcp", hostname+":"+port)
 
 	pignaConn.Connection = conn
+	pignaConn.Hostname = hostname
+	pignaConn.Port = port
 	senderName = sn
 	return pignaConn, err
 }
@@ -197,43 +203,43 @@ func (pignaConn PignaConnection) GetNumberOfQueues() (int, error) {
 	return res.ResponseTextInt, err
 }
 
-func (pignaConn PignaConnection) GetQueue(queueName string) (Queue, error) {
-	var req Request = Request{
-		SenderName: senderName,
-		Action:     "getQueue",
-		Queue:      Queue{
-			QueueName: queueName,
-		},
-	}
-	writeToClient(pignaConn.Connection, req.String())
-	res, err := waitForResponse(pignaConn)
-	var queue Queue
-	if err != nil {
-		return queue, err
-	}
-	if res.ResponseType == "error" {
-		return queue, errors.New(res.ResponseTextString)
-	}
-
-	dec, _ := base64.StdEncoding.DecodeString(res.ResponseTextStringEncoded)
-
-	err = json.Unmarshal([]byte(dec), &queue)
-	localQueueList[queue.QueueName] = &queue
-	// this is the main pignaDaemon
-	// check if it is empty
-	if queue.HostOwner == "" {
-		localQueueList[queue.QueueName].ConnHostOwner = pignaConn
-	} else {
-		conn, err := Connect(queue.HostOwner, senderName)
-		if err != nil {
-			delete(localQueueList, queue.QueueName)
-			return queue, errors.New("Cannot connect to the host "+
-				queue.HostOwner)
-		}
-		localQueueList[queue.QueueName].ConnHostOwner = conn
-	}
-	return *localQueueList[queue.QueueName], err
-}
+// func (pignaConn PignaConnection) GetQueue(queueName string) (Queue, error) {
+// 	var req Request = Request{
+// 		SenderName: senderName,
+// 		Action:     "getQueue",
+// 		Queue:      Queue{
+// 			QueueName: queueName,
+// 		},
+// 	}
+// 	writeToClient(pignaConn.Connection, req.String())
+// 	res, err := waitForResponse(pignaConn)
+// 	var queue Queue
+// 	if err != nil {
+// 		return queue, err
+// 	}
+// 	if res.ResponseType == "error" {
+// 		return queue, errors.New(res.ResponseTextString)
+// 	}
+//
+// 	dec, _ := base64.StdEncoding.DecodeString(res.ResponseTextStringEncoded)
+//
+// 	err = json.Unmarshal([]byte(dec), &queue)
+// 	localQueueList[queue.QueueName] = &queue
+// 	// this is the main pignaDaemon
+// 	// check if it is empty
+// 	if queue.HostOwner == "" {
+// 		localQueueList[queue.QueueName].ConnHostOwner = pignaConn
+// 	} else {
+// 		conn, err := Connect(queue.HostOwner, senderName)
+// 		if err != nil {
+// 			delete(localQueueList, queue.QueueName)
+// 			return queue, errors.New("Cannot connect to the host "+
+// 				queue.HostOwner)
+// 		}
+// 		localQueueList[queue.QueueName].ConnHostOwner = conn
+// 	}
+// 	return *localQueueList[queue.QueueName], err
+// }
 
 func CreateQueueStruct(queueName string) Queue {
 	queueStruct := Queue {
@@ -254,13 +260,19 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 	res, err := waitForResponse(pignaConn)
 
 	if res.ResponseType == "success" {
-		localQueueList[q.QueueName] = &q
-		localQueueList[q.QueueName].HostOwner = res.ResponseTextString
 
-		if res.ResponseTextString == "" {
+		// var piConn PignaConnection
+		var newQueue Queue
+		dec, _ := base64.StdEncoding.DecodeString(res.ResponseTextStringEncoded)
+		json.Unmarshal([]byte(dec), &newQueue)
+		localQueueList[q.QueueName] = &newQueue
+
+		if newQueue.HostOwner == pignaConn.Hostname &&
+			newQueue.PortOwner == pignaConn.Port {
+
 			localQueueList[q.QueueName].ConnHostOwner = pignaConn
 		} else {
-			conn, err := Connect(res.ResponseTextString, senderName)
+			conn, err := Connect(newQueue.HostOwner, newQueue.PortOwner, senderName)
 			if err != nil {
 				delete(localQueueList, q.QueueName)
 				return q, errors.New("Cannot connect to the host "+
@@ -268,6 +280,9 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 			}
 			localQueueList[q.QueueName].ConnHostOwner = conn
 		}
+
+	} else {
+		return q, errors.New(res.ResponseTextString)
 	}
 
 	return *localQueueList[q.QueueName], err
@@ -289,11 +304,21 @@ func (q Queue) DestroyQueue() (Response, error) {
 }
 
 func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
+
+	// get a free port where to listen
+	l,_ := net.Listen("tcp",":0")
+	defer l.Close()
+	port := getPort(l.Addr())
+
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "consumeQueue",
 		Queue: q,
+		Message: Message{
+			Body: port,
+		},
 	}
+
 
 	_, isPresent := localQueueList[q.QueueName]
 	if !isPresent {
@@ -305,6 +330,11 @@ func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 
 	if res.ResponseType == "success" {
 		localQueueList[q.QueueName].IsConsuming = true
+		consumerPignaConnection, err := Connect(q.HostOwner, port, senderName)
+		if err != nil {
+			return err
+		}
+		q.ForwardConn = consumerPignaConnection
 		go consume(q, callback)
 	}
 	return nil
@@ -316,7 +346,6 @@ func (q Queue) RemoveConsumer() (Response, error) {
 		Action:     "removeConsumer",
 		Queue: q,
 	}
-
 
 	writeToClient(q.ConnHostOwner.Connection, req.String())
 	res, err := waitForResponse(q.ConnHostOwner)
@@ -402,7 +431,7 @@ func consume(q Queue, callback func(Queue, Response)) {
 		var response Response
 
 		var buffer = make([]byte, chunkSize)
-		readLen, err := q.ConnHostOwner.Connection.Read(buffer)
+		readLen, err := q.ForwardConn.Connection.Read(buffer)
 
 		if err != nil {
 			log.Println("Connection closed by the server. Shutting down")
@@ -467,6 +496,11 @@ func consume(q Queue, callback func(Queue, Response)) {
 			}
 		}
 	}
+}
+
+func getPort(addr net.Addr) string {
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr.String())
+	return strconv.Itoa(tcpAddr.Port)
 }
 
 func waitForResponse(pignaConn PignaConnection) (Response, error) {

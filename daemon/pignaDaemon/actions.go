@@ -239,7 +239,7 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 	// "loadBalanced" == send messages to connections in RoundRobin mode
 	} else if queue.QueueType == "loadBalanced" {
 		msg := formatMessage(*queue, msgAct.Message)
-		sendToClient(queue.Consumers[queue.LastRRIdx-1].Connection, msg)
+		sendToClient(queue.Consumers[queue.LastRRIdx-1].ForwardConn, msg)
 		// circolar list
 		if queue.LastRRIdx % len(queue.Consumers) == 0 {
 			queue.LastRRIdx = 1
@@ -265,66 +265,96 @@ func actionHasBeenAcked(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
-	if !thisIsANode {
-		isPresent, _, _ := checkQueueName(msgAct.Queue)
-		if isPresent {
-			writeMessageString(conn, "error", "This queueName already exists")
-			return
-		}
-	}
-
-	var validQueueTypes = map[string]bool{
-		"normal": true,
-		"loadBalanced": true,
-	}
-
-	_, isValid := validQueueTypes[msgAct.Queue.QueueType]
-	if !isValid {
-		writeMessageString(conn, "error", "Invalid queue type")
-		return
-	}
-
-	// if there are available cluster nodes, distribute new Queues
-	// just add the new queue to who owns the minimum number
-	min := len(queueList.Queues)
-	selectedHostname := ""
-	for hostname, _ := range clusterNodes {
-		numQueues := len(clusterNodes[hostname].QueueList.Queues)
-		if numQueues < min {
-			selectedHostname = hostname
-		}
-	}
-
-	var newQueue Queue
-	newQueue.MsgCounter = 0
-	newQueue.LastRRIdx = 1
-	copyQueueStruct(&msgAct, &newQueue)
-	// this local node owns the minimum number of queue
-	if selectedHostname == "" {
-		queueList.addQueue(newQueue)
-		var ret string
-		var clientConn net.Conn
-		if thisIsANode {
-			ret = thisHost
-			clientConn = msgAct.Queue.ClientConn
+	isPresent, host, _ := checkQueueName(msgAct.Queue)
+	// just return the queue
+	if isPresent {
+		// the queue is here locally
+		var queue Queue
+		var port string
+		if host == "" {
+			queue = *queueList.Queues[msgAct.Queue.QueueName]
+			host = thisHost
+			port = thisPort
 		} else {
-			ret = ""
-			clientConn = conn
+			queue = *clusterNodes[host].QueueList.Queues[msgAct.Queue.QueueName]
+			port = clusterNodes[host].Port
 		}
-		writeMessageString(clientConn, "success", ret)
+
+		var pignaQueue pigna.Queue = pigna.Queue {
+			QueueName: queue.QueueName,
+			QueueType: queue.QueueType,
+			NeedsAck: queue.NeedsAck,
+			HostOwner: host,
+			PortOwner: port,
+			IsConsuming: false,
+		}
+
+		queueString, _ := json.Marshal(pignaQueue)
+		writeMessageStringEncoded(conn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
 	} else {
-		// update the local cache
-		clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
-		pignaConn, err := pigna.Connect(selectedHostname, "")
-		if err != nil {
-			log.Println("Host " + selectedHostname + " is unreachable!")
+
+		var validQueueTypes = map[string]bool{
+			"normal": true,
+			"loadBalanced": true,
+		}
+
+		_, isValid := validQueueTypes[msgAct.Queue.QueueType]
+		if !isValid {
+			writeMessageString(conn, "error", "Invalid queue type")
 			return
 		}
-		queueStruct := pigna.CreateQueueStruct(msgAct.Queue.QueueName)
-		queueStruct.QueueType = msgAct.Queue.QueueType
-		queueStruct.NeedsAck = msgAct.Queue.NeedsAck
-		queueStruct.ClientConn = conn
-		pignaConn.CreateQueue(queueStruct)
+
+		// if there are available cluster nodes, distribute new Queues
+		// just add the new queue to who owns the minimum number
+		min := len(queueList.Queues)
+		selectedHostname := ""
+		for hostname, _ := range clusterNodes {
+			numQueues := len(clusterNodes[hostname].QueueList.Queues)
+			if numQueues < min {
+				selectedHostname = hostname
+			}
+		}
+
+		var newQueue Queue
+		newQueue.MsgCounter = 0
+		newQueue.LastRRIdx = 1
+		copyQueueStruct(&msgAct, &newQueue)
+		// var pignaConn pigna.PignaConnection
+		// this local node owns the minimum number of queue
+		if selectedHostname == "" {
+			queueList.addQueue(newQueue)
+			var clientConn net.Conn
+			if thisIsANode {
+				clientConn = msgAct.Queue.ClientConn
+			} else {
+				clientConn = conn
+			}
+
+			var pignaQueue pigna.Queue = pigna.Queue {
+				QueueName: msgAct.Queue.QueueName,
+				QueueType: msgAct.Queue.QueueType,
+				NeedsAck: msgAct.Queue.NeedsAck,
+				HostOwner: thisHost,
+				PortOwner: thisPort,
+			}
+
+			queueString, _ := json.Marshal(pignaQueue)
+			writeMessageStringEncoded(clientConn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
+		} else {
+			// update the local cache
+			clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
+			pignaConn, err := pigna.Connect(selectedHostname,
+				clusterNodes[selectedHostname].Port, "")
+			if err != nil {
+				log.Println("Host " + selectedHostname + " is unreachable!")
+				return
+			}
+			queueStruct := pigna.CreateQueueStruct(msgAct.Queue.QueueName)
+			queueStruct.QueueType = msgAct.Queue.QueueType
+			queueStruct.NeedsAck = msgAct.Queue.NeedsAck
+			queueStruct.ClientConn = conn
+			pignaConn.CreateQueue(queueStruct)
+		}
 	}
 }
 
@@ -342,12 +372,14 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 		return
 	}
 
-	consumerIdx, err := checkConsumers(conn, msgAct.Queue.QueueName, msgAct.SenderName)
+	hostname := getHostname(conn)
+	forwardConn, err := net.Dial("tcp", hostname+":"+msgAct.Message.Body)
+	consumerIdx, err := checkConsumers(forwardConn, msgAct.Queue.QueueName, msgAct.SenderName)
 
 	if err == nil {
 		// update che conn socket if the same consumer has changed it
-		if queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].Connection != conn {
-			queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].Connection = conn
+		if queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].ForwardConn != forwardConn {
+			queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].ForwardConn = forwardConn
 			consumerHasChangedSocket = true
 		} else {
 			writeMessageString(conn, "error", "Already consuming this queue")
@@ -355,10 +387,13 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 		}
 	}
 
+
 	// adding the connection to the proper queue `Consumers` only if there is a new socket
 	if !consumerHasChangedSocket {
-		queueList.Queues[msgAct.Queue.QueueName].addConsumer(conn, msgAct.SenderName)
+		queueList.Queues[msgAct.Queue.QueueName].addConsumer(forwardConn, msgAct.SenderName)
 	}
+
+
 	writeMessageString(conn, "success", "")
 
 	// clear the queue sending the `UnconsumedMessages`
