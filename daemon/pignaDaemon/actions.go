@@ -9,30 +9,6 @@ import (
 	"github.com/puskin94/pigna"
 )
 
-// func actionDistributeQueues(conn net.Conn, msgAct MsgAction) {
-// 	// numQueues := len(queueList.Queues)
-// 	totNumQueues := 0
-// 	numClusterNodes := len(clusterNodes)
-//
-// 	for hostname, _ := range clusterNodes {
-// 		// // act like a normal pigna request
-// 		// req := MsgAction{
-// 		// 	Action: "getQueueNames",
-// 		// }
-// 		//
-// 		// reqString, _ := json.Marshal(req)
-// 		// sendToClient(mainPigna, string(reqString))
-// 		pignaConn, err := pigna.Connect(hostname, "")
-// 		if err != nil {
-// 			log.Println("Host " + hostname + " is unreachable!")
-// 			continue
-// 		}
-// 		num, _ := pignaConn.GetNumberOfQueues()
-//
-// 		pignaConn.Disconnect()
-// 		totNumQueues += num
-// 	}
-// }
 
 func actionAddClusterNode(conn net.Conn, msgAct MsgAction) {
 	for hostname, node := range clusterNodes {
@@ -90,51 +66,6 @@ func actionCheckQueueName(conn net.Conn, msgAct MsgAction) {
 	} else {
 		writeMessageBool(conn, "success", true)
 	}
-}
-
-func actionGetQueue(conn net.Conn, msgAct MsgAction) {
-	// if res.ResponseTextString == "" {
-	// 	host := pignaConn
-	// } else {
-	// 	host, err := Connect(res.ResponseTextString, senderName)
-	// 	if err != nil {
-	// 		localQueueList[q.QueueName].ConnHostOwner = conn
-	// 	} else {
-	// 		return queue, errors.New("Cannot connect to the host "+
-	// 			res.ResponseTextString)
-	// 	}
-	// }
-	isPresent, host, err := checkQueueName(msgAct.Queue)
-	if !isPresent {
-		writeMessageString(conn, "error", err.Error())
-		return
-	}
-	// the queue is here locally
-	var queue Queue
-	if host == "" {
-		queue = *queueList.Queues[msgAct.Queue.QueueName]
-	} else {
-		queue = *clusterNodes[host].QueueList.Queues[msgAct.Queue.QueueName]
-	}
-
-	type PignaQueue struct {
-		QueueName     string          `json:"queueName"`
-		QueueType     string          `json:"queueType"`
-		NeedsAck      bool            `json:"needsAck"`
-		HostOwner     string          `json:"hostOwner"`
-		IsConsuming   bool            `json:"isConsuming"`
-	}
-
-	var pignaQueue PignaQueue = PignaQueue {
-		QueueName: queue.QueueName,
-		QueueType: queue.QueueType,
-		NeedsAck: queue.NeedsAck,
-		HostOwner: host,
-		IsConsuming: false,
-	}
-
-	queueString, _ := json.Marshal(pignaQueue)
-	writeMessageStringEncoded(conn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
 }
 
 func actionAckMessage(conn net.Conn, msgAct MsgAction) {
@@ -286,7 +217,6 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 			NeedsAck: queue.NeedsAck,
 			HostOwner: host,
 			PortOwner: port,
-			IsConsuming: false,
 		}
 
 		queueString, _ := json.Marshal(pignaQueue)

@@ -79,7 +79,6 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"destroyQueue":       actionDestroyQueue,
 	"removeConsumer":     actionRemoveConsumer,
 	"newClusterNode":     actionAddClusterNode,
-	"getQueue":           actionGetQueue,
 }
 
 var thisPort string

@@ -355,7 +355,7 @@ func (q Queue) RemoveConsumer() (Response, error) {
 		return res, errors.New("This queue does not exists locally")
 	}
 	if res.ResponseType == "success" && localQueueList[q.QueueName].IsConsuming {
-		delete(localQueueList, q.QueueName)
+		localQueueList[q.QueueName].IsConsuming = false
 	}
 	return res, err
 }
@@ -434,7 +434,6 @@ func consume(q Queue, callback func(Queue, Response)) {
 		readLen, err := q.ForwardConn.Connection.Read(buffer)
 
 		if err != nil {
-			log.Println("Connection closed by the server. Shutting down")
 			break
 		}
 		buffer = buffer[:readLen]
