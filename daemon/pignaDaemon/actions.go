@@ -303,6 +303,7 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	}
 
 	hostname := getHostname(conn)
+	forwardPort := msgAct.Message.Body
 	forwardConn, err := net.Dial("tcp", hostname+":"+msgAct.Message.Body)
 	consumerIdx, err := checkConsumers(forwardConn, msgAct.Queue.QueueName, msgAct.SenderName)
 
@@ -320,7 +321,8 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 
 	// adding the connection to the proper queue `Consumers` only if there is a new socket
 	if !consumerHasChangedSocket {
-		queueList.Queues[msgAct.Queue.QueueName].addConsumer(forwardConn, msgAct.SenderName)
+		queueList.Queues[msgAct.Queue.QueueName].addConsumer(forwardConn,
+			forwardPort, msgAct.SenderName)
 	}
 
 

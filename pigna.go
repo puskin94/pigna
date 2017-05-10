@@ -203,44 +203,6 @@ func (pignaConn PignaConnection) GetNumberOfQueues() (int, error) {
 	return res.ResponseTextInt, err
 }
 
-// func (pignaConn PignaConnection) GetQueue(queueName string) (Queue, error) {
-// 	var req Request = Request{
-// 		SenderName: senderName,
-// 		Action:     "getQueue",
-// 		Queue:      Queue{
-// 			QueueName: queueName,
-// 		},
-// 	}
-// 	writeToClient(pignaConn.Connection, req.String())
-// 	res, err := waitForResponse(pignaConn)
-// 	var queue Queue
-// 	if err != nil {
-// 		return queue, err
-// 	}
-// 	if res.ResponseType == "error" {
-// 		return queue, errors.New(res.ResponseTextString)
-// 	}
-//
-// 	dec, _ := base64.StdEncoding.DecodeString(res.ResponseTextStringEncoded)
-//
-// 	err = json.Unmarshal([]byte(dec), &queue)
-// 	localQueueList[queue.QueueName] = &queue
-// 	// this is the main pignaDaemon
-// 	// check if it is empty
-// 	if queue.HostOwner == "" {
-// 		localQueueList[queue.QueueName].ConnHostOwner = pignaConn
-// 	} else {
-// 		conn, err := Connect(queue.HostOwner, senderName)
-// 		if err != nil {
-// 			delete(localQueueList, queue.QueueName)
-// 			return queue, errors.New("Cannot connect to the host "+
-// 				queue.HostOwner)
-// 		}
-// 		localQueueList[queue.QueueName].ConnHostOwner = conn
-// 	}
-// 	return *localQueueList[queue.QueueName], err
-// }
-
 func CreateQueueStruct(queueName string) Queue {
 	queueStruct := Queue {
 		QueueName: queueName,
@@ -267,8 +229,13 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 		json.Unmarshal([]byte(dec), &newQueue)
 		localQueueList[q.QueueName] = &newQueue
 
-		if newQueue.HostOwner == pignaConn.Hostname &&
+		if (newQueue.HostOwner == pignaConn.Hostname ||
+			newQueue.HostOwner == "") &&
 			newQueue.PortOwner == pignaConn.Port {
+
+			if newQueue.HostOwner == "" {
+				localQueueList[q.QueueName].HostOwner = pignaConn.Hostname
+			}
 
 			localQueueList[q.QueueName].ConnHostOwner = pignaConn
 		} else {
@@ -319,7 +286,6 @@ func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 		},
 	}
 
-
 	_, isPresent := localQueueList[q.QueueName]
 	if !isPresent {
 		return errors.New("This queue does not exists locally")
@@ -330,6 +296,7 @@ func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 
 	if res.ResponseType == "success" {
 		localQueueList[q.QueueName].IsConsuming = true
+
 		consumerPignaConnection, err := Connect(q.HostOwner, port, senderName)
 		if err != nil {
 			return err
@@ -428,6 +395,7 @@ func consume(q Queue, callback func(Queue, Response)) {
 	chunkSize := 1024
 	broken := ""
 	for localQueueList[q.QueueName].IsConsuming {
+		log.Println(q.ForwardConn)
 		var response Response
 
 		var buffer = make([]byte, chunkSize)

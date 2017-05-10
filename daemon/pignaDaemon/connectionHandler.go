@@ -49,6 +49,7 @@ type Queue struct {
 
 type Client struct {
 	ForwardConn net.Conn
+	ForwardPort string
 	Name        string
 }
 
@@ -100,9 +101,10 @@ func (q *QueueList) destroyQueue(queueName string) map[string]*Queue {
 	return q.Queues
 }
 
-func (q *Queue) addConsumer(forwardConn net.Conn, senderName string) []Client {
+func (q *Queue) addConsumer(forwardConn net.Conn, forwardPort string, senderName string) []Client {
 	var c Client
 	c.ForwardConn = forwardConn
+	c.ForwardPort = forwardPort
 	c.Name = senderName
 	q.Consumers = append(q.Consumers, c)
 	return q.Consumers
@@ -177,7 +179,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		log.Println(msg)
+		// log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -209,6 +211,7 @@ func broadcastToQueue(q Queue, message Message) {
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
+		log.Println(q.Consumers[idx].ForwardPort)
 		sendToClient(q.Consumers[idx].ForwardConn, msg)
 	}
 }
@@ -342,5 +345,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	log.Println(message)
+	// log.Println(message)
 }
