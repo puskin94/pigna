@@ -162,7 +162,6 @@ func askToJoinAsNodeCluster(clusterHost, clusterPort string) error {
 	mainPigna, err := net.Dial("tcp", clusterHost+":"+clusterPort)
 
 	// act like a normal pigna request
-	log.Println(thisHost)
 	req := MsgAction{
 		Action: "newClusterNode",
 		Message: Message{
@@ -211,7 +210,6 @@ func broadcastToQueue(q Queue, message Message) {
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
-		log.Println(q.Consumers[idx].ForwardPort)
 		sendToClient(q.Consumers[idx].ForwardConn, msg)
 	}
 }
@@ -344,6 +342,9 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 }
 
 func sendToClient(conn net.Conn, message string) {
-	conn.Write([]byte(message + "\n"))
+	_, err := conn.Write([]byte(message + "\n"))
 	// log.Println(message)
+	if err != nil {
+		log.Println(err)
+	}
 }

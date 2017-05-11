@@ -4,6 +4,7 @@ import (
 	"net"
 	"strings"
 	"log"
+	"bufio"
 	"encoding/json"
 	"encoding/base64"
 	"github.com/puskin94/pigna"
@@ -289,7 +290,6 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
-	var consumerHasChangedSocket bool = false
 	isPresent, clusterNode, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
 		writeMessageString(conn, "error", err.Error())
@@ -302,15 +302,58 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 		return
 	}
 
-	hostname := getHostname(conn)
+	// hostname := getHostname(conn)
 	forwardPort := msgAct.Message.Body
-	forwardConn, err := net.Dial("tcp", hostname+":"+msgAct.Message.Body)
-	consumerIdx, err := checkConsumers(forwardConn, msgAct.Queue.QueueName, msgAct.SenderName)
+
+	// forwardConn, err := net.Dial("tcp", hostname+":"+forwardPort)
+	server, err := net.Listen("tcp", ":"+forwardPort)
+	if err != nil {
+		writeMessageString(conn, "error", "Cannot listen")
+	}
+
+	writeMessageString(conn, "success", "")
+
+	for {
+		c, err := server.Accept()
+
+		if err != nil {
+			log.Println("Error accepting: ", err.Error())
+			return
+		}
+
+		go handleQueueRequest(c, forwardPort)
+	}
+}
+
+func handleQueueRequest(conn net.Conn, forwardPort string) {
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		msg := scanner.Text()
+
+		msgAct := new(MsgAction)
+		err := json.Unmarshal([]byte(msg), &msgAct)
+		if err != nil {
+			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
+			return
+		}
+		if msgAct.Action == "addConsumer" {
+			addConsumer(conn, *msgAct, forwardPort)
+		} else if msgAct.Action == "sendMsg" {
+			actionSendMsg(conn, *msgAct)
+		}
+	}
+
+}
+
+func addConsumer(conn net.Conn, msgAct MsgAction, forwardPort string) {
+	var consumerHasChangedSocket bool = false
+
+	consumerIdx, err := checkConsumers(conn, msgAct.Queue.QueueName, msgAct.SenderName)
 
 	if err == nil {
 		// update che conn socket if the same consumer has changed it
-		if queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].ForwardConn != forwardConn {
-			queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].ForwardConn = forwardConn
+		if queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].ForwardConn != conn {
+			queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].ForwardConn = conn
 			consumerHasChangedSocket = true
 		} else {
 			writeMessageString(conn, "error", "Already consuming this queue")
@@ -321,10 +364,9 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 
 	// adding the connection to the proper queue `Consumers` only if there is a new socket
 	if !consumerHasChangedSocket {
-		queueList.Queues[msgAct.Queue.QueueName].addConsumer(forwardConn,
+		queueList.Queues[msgAct.Queue.QueueName].addConsumer(conn,
 			forwardPort, msgAct.SenderName)
 	}
-
 
 	writeMessageString(conn, "success", "")
 

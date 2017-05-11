@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
-	"log"
 	"net"
 	"strings"
 	"time"
@@ -273,9 +272,9 @@ func (q Queue) DestroyQueue() (Response, error) {
 func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 
 	// get a free port where to listen
-	l,_ := net.Listen("tcp",":0")
-	defer l.Close()
+	l,_ := net.Listen("tcp","")
 	port := getPort(l.Addr())
+	l.Close()
 
 	var req Request = Request{
 		SenderName: senderName,
@@ -295,14 +294,28 @@ func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 	res, _ := waitForResponse(q.ConnHostOwner)
 
 	if res.ResponseType == "success" {
+
+		var req2 Request = Request{
+			SenderName: senderName,
+			Action:     "addConsumer",
+			Queue: q,
+		}
+
+
 		localQueueList[q.QueueName].IsConsuming = true
 
 		consumerPignaConnection, err := Connect(q.HostOwner, port, senderName)
 		if err != nil {
 			return err
 		}
-		q.ForwardConn = consumerPignaConnection
-		go consume(q, callback)
+		writeToClient(consumerPignaConnection.Connection, req2.String())
+
+		res2, _ := waitForResponse(consumerPignaConnection)
+
+		if res2.ResponseType == "success" {
+			q.ForwardConn = consumerPignaConnection
+			go consume(q, callback)
+		}
 	}
 	return nil
 }
@@ -395,7 +408,6 @@ func consume(q Queue, callback func(Queue, Response)) {
 	chunkSize := 1024
 	broken := ""
 	for localQueueList[q.QueueName].IsConsuming {
-		log.Println(q.ForwardConn)
 		var response Response
 
 		var buffer = make([]byte, chunkSize)
