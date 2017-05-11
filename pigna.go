@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 	"errors"
-	"strconv"
 
 	"github.com/satori/go.uuid"
 )
@@ -247,6 +246,14 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 			localQueueList[q.QueueName].ConnHostOwner = conn
 		}
 
+		if q.ForwardConn.Connection == nil {
+			localQueueList[q.QueueName].ForwardConn, err = Connect(localQueueList[q.QueueName].HostOwner, localQueueList[q.QueueName].ForwardConn.Port, senderName)
+			if err != nil {
+				return q, errors.New("Error connecting to the serverg")
+			}
+
+		}
+
 	} else {
 		return q, errors.New(res.ResponseTextString)
 	}
@@ -271,18 +278,10 @@ func (q Queue) DestroyQueue() (Response, error) {
 
 func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 
-	// get a free port where to listen
-	l,_ := net.Listen("tcp","")
-	port := getPort(l.Addr())
-	l.Close()
-
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "consumeQueue",
 		Queue: q,
-		Message: Message{
-			Body: port,
-		},
 	}
 
 	_, isPresent := localQueueList[q.QueueName]
@@ -290,32 +289,13 @@ func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 		return errors.New("This queue does not exists locally")
 	}
 
-	writeToClient(q.ConnHostOwner.Connection, req.String())
-	res, _ := waitForResponse(q.ConnHostOwner)
+	writeToClient(q.ForwardConn.Connection, req.String())
+	res, _ := waitForResponse(q.ForwardConn)
 
 	if res.ResponseType == "success" {
 
-		var req2 Request = Request{
-			SenderName: senderName,
-			Action:     "addConsumer",
-			Queue: q,
-		}
-
-
 		localQueueList[q.QueueName].IsConsuming = true
-
-		consumerPignaConnection, err := Connect(q.HostOwner, port, senderName)
-		if err != nil {
-			return err
-		}
-		writeToClient(consumerPignaConnection.Connection, req2.String())
-
-		res2, _ := waitForResponse(consumerPignaConnection)
-
-		if res2.ResponseType == "success" {
-			q.ForwardConn = consumerPignaConnection
-			go consume(q, callback)
-		}
+		go consume(q, callback)
 	}
 	return nil
 }
@@ -381,7 +361,8 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 				UUID: u1.String(),
 			},
 		}
-		writeToClient(q.ConnHostOwner.Connection, req.String())
+
+		writeToClient(q.ForwardConn.Connection, req.String())
 		return u1
 	}
 
@@ -399,7 +380,7 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 			TotalChunks: len(messageChunks),
 			UUID:        u1.String(),
 		}
-		writeToClient(q.ConnHostOwner.Connection, req.String())
+		writeToClient(q.ForwardConn.Connection, req.String())
 	}
 	return u1
 }
@@ -475,11 +456,6 @@ func consume(q Queue, callback func(Queue, Response)) {
 			}
 		}
 	}
-}
-
-func getPort(addr net.Addr) string {
-	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr.String())
-	return strconv.Itoa(tcpAddr.Port)
 }
 
 func waitForResponse(pignaConn PignaConnection) (Response, error) {

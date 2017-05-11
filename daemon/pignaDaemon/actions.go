@@ -216,6 +216,9 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 			QueueName: queue.QueueName,
 			QueueType: queue.QueueType,
 			NeedsAck: queue.NeedsAck,
+			ForwardConn: pigna.PignaConnection{
+				Port: queue.ServerQueue.ForwardPort,
+			},
 			HostOwner: host,
 			PortOwner: port,
 		}
@@ -261,16 +264,32 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 				clientConn = conn
 			}
 
+			// get a free port where to listen
+			l,_ := net.Listen("tcp","")
+			port := getPort(l.Addr())
+			l.Close()
+
+			fwConn := pigna.PignaConnection {
+				Hostname: thisHost,
+				Port: port,
+			}
+
 			var pignaQueue pigna.Queue = pigna.Queue {
 				QueueName: msgAct.Queue.QueueName,
 				QueueType: msgAct.Queue.QueueType,
 				NeedsAck: msgAct.Queue.NeedsAck,
 				HostOwner: thisHost,
 				PortOwner: thisPort,
+				ForwardConn: fwConn,
 			}
+
+			queueList.Queues[msgAct.Queue.QueueName].ServerQueue.ForwardPort = port
+			go createServerQueue(*queueList.Queues[msgAct.Queue.QueueName], port)
 
 			queueString, _ := json.Marshal(pignaQueue)
 			writeMessageStringEncoded(clientConn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
+
+
 		} else {
 			// update the local cache
 			clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
@@ -289,6 +308,27 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 	}
 }
 
+func createServerQueue(queue Queue, port string) {
+
+	// forwardConn, err := net.Dial("tcp", hostname+":"+forwardPort)
+	server, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		return
+	}
+
+	for {
+		c, err := server.Accept()
+
+		if err != nil {
+			log.Println("Error accepting: ", err.Error())
+			return
+		}
+
+		go handleQueueRequest(c, port)
+	}
+
+}
+
 func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 	isPresent, clusterNode, err := checkQueueName(msgAct.Queue)
 	if !isPresent {
@@ -302,53 +342,9 @@ func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
 		return
 	}
 
-	// hostname := getHostname(conn)
-	forwardPort := msgAct.Message.Body
-
-	// forwardConn, err := net.Dial("tcp", hostname+":"+forwardPort)
-	server, err := net.Listen("tcp", ":"+forwardPort)
-	if err != nil {
-		writeMessageString(conn, "error", "Cannot listen")
-	}
-
-	writeMessageString(conn, "success", "")
-
-	for {
-		c, err := server.Accept()
-
-		if err != nil {
-			log.Println("Error accepting: ", err.Error())
-			return
-		}
-
-		go handleQueueRequest(c, forwardPort)
-	}
-}
-
-func handleQueueRequest(conn net.Conn, forwardPort string) {
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		msg := scanner.Text()
-
-		msgAct := new(MsgAction)
-		err := json.Unmarshal([]byte(msg), &msgAct)
-		if err != nil {
-			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
-			return
-		}
-		if msgAct.Action == "addConsumer" {
-			addConsumer(conn, *msgAct, forwardPort)
-		} else if msgAct.Action == "sendMsg" {
-			actionSendMsg(conn, *msgAct)
-		}
-	}
-
-}
-
-func addConsumer(conn net.Conn, msgAct MsgAction, forwardPort string) {
-	var consumerHasChangedSocket bool = false
-
 	consumerIdx, err := checkConsumers(conn, msgAct.Queue.QueueName, msgAct.SenderName)
+
+	var consumerHasChangedSocket bool = false
 
 	if err == nil {
 		// update che conn socket if the same consumer has changed it
@@ -365,7 +361,7 @@ func addConsumer(conn net.Conn, msgAct MsgAction, forwardPort string) {
 	// adding the connection to the proper queue `Consumers` only if there is a new socket
 	if !consumerHasChangedSocket {
 		queueList.Queues[msgAct.Queue.QueueName].addConsumer(conn,
-			forwardPort, msgAct.SenderName)
+			msgAct.SenderName)
 	}
 
 	writeMessageString(conn, "success", "")
@@ -377,4 +373,26 @@ func addConsumer(conn net.Conn, msgAct MsgAction, forwardPort string) {
 		queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages =
 			queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages[1:]
 	}
+}
+
+func handleQueueRequest(conn net.Conn, forwardPort string) {
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		msg := scanner.Text()
+		log.Println(msg)
+
+		msgAct := new(MsgAction)
+		err := json.Unmarshal([]byte(msg), &msgAct)
+		if err != nil {
+			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
+			return
+		}
+
+		if msgAct.Action == "sendMsg" {
+			actionSendMsg(conn, *msgAct)
+		} else if msgAct.Action == "consumeQueue" {
+			actionConsumeQueue(conn, *msgAct)
+		}
+	}
+
 }

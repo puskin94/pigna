@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -39,6 +40,7 @@ type Queue struct {
 	NeedsAck           bool     `json:"needsAck"`
 	HostOwner          string   `json:"hostOwner,omitempty"`
 	ClientConn         net.Conn `json:"clientConn,omitempty"`
+	ServerQueue        Client
 	Consumers          []Client
 	UnconsumedMessages []Message
 	UnackedMessages    []Message
@@ -68,7 +70,7 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"getNumOfPaired":     actionGetNumberOfPaired,
 	"createQueue":        actionCreateQueue,
 	"checkQueueName":     actionCheckQueueName,
-	"consumeQueue":       actionConsumeQueue,
+	// "consumeQueue":       actionConsumeQueue,
 	"getNamesOfPaired":   actionGetNamesOfPaired,
 	"getQueueNames":      actionGetQueueNames,
 	"getNumOfUnacked":    actionGetNumOfUnacked,
@@ -101,10 +103,9 @@ func (q *QueueList) destroyQueue(queueName string) map[string]*Queue {
 	return q.Queues
 }
 
-func (q *Queue) addConsumer(forwardConn net.Conn, forwardPort string, senderName string) []Client {
+func (q *Queue) addConsumer(forwardConn net.Conn, senderName string) []Client {
 	var c Client
 	c.ForwardConn = forwardConn
-	c.ForwardPort = forwardPort
 	c.Name = senderName
 	q.Consumers = append(q.Consumers, c)
 	return q.Consumers
@@ -178,7 +179,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		// log.Println(msg)
+		log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -312,9 +313,9 @@ func getLocalIp() (string, error) {
     return "", err
 }
 
-func getHostname(conn net.Conn) string {
-	tcpAddr, _ := net.ResolveTCPAddr("tcp", conn.RemoteAddr().String())
-	return tcpAddr.IP.String()
+func getPort(addr net.Addr) string {
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr.String())
+	return strconv.Itoa(tcpAddr.Port)
 }
 
 func writeMessageString(conn net.Conn, messageType string, message string) {
@@ -343,7 +344,7 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	_, err := conn.Write([]byte(message + "\n"))
-	// log.Println(message)
+	log.Println(message)
 	if err != nil {
 		log.Println(err)
 	}
