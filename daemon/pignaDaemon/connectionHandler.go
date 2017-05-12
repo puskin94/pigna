@@ -70,13 +70,11 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"getNumOfPaired":     actionGetNumberOfPaired,
 	"createQueue":        actionCreateQueue,
 	"checkQueueName":     actionCheckQueueName,
-	// "consumeQueue":       actionConsumeQueue,
 	"getNamesOfPaired":   actionGetNamesOfPaired,
 	"getQueueNames":      actionGetQueueNames,
 	"getNumOfUnacked":    actionGetNumOfUnacked,
 	"getNumOfUnconsumed": actionGetNumOfUnconsumed,
 	"getNumOfQueues":     actionGetNumOfQueues,
-	"sendMsg":            actionSendMsg,
 	"msgAck":             actionAckMessage,
 	"hasBeenAcked":       actionHasBeenAcked,
 	"destroyQueue":       actionDestroyQueue,
@@ -204,13 +202,14 @@ func (q *Queue) deleteConsumer(clIdx int) []Client {
 	return q.Consumers
 }
 
-func broadcastToQueue(q Queue, message Message) {
+func broadcastToQueue(q *Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
-		msg := formatMessage(q, message)
+		msg := formatMessage(*q, message)
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
+		// log.Println(q.UnackedMessages)
 		sendToClient(q.Consumers[idx].ForwardConn, msg)
 	}
 }
@@ -218,10 +217,11 @@ func broadcastToQueue(q Queue, message Message) {
 func formatMessage(q Queue, message Message) string {
 	msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", `+
 		`"responseTextString": "%s", "senderName": "%s", "msgId": %d,`+
-		`"needsAck": %v, "isAChunk": %v, "nChunk": %d, "totalChunks": %d}`,
+		`"needsAck": %v, "isAChunk": %v, "nChunk": %d, "totalChunks": %d,`+
+		`"UUID": "%s"}`,
 		q.QueueName, message.Body, message.SenderName,
 		message.MsgId, q.NeedsAck, message.IsAChunk, message.NChunk,
-		message.TotalChunks)
+		message.TotalChunks, message.MsgUUID)
 	return msg
 }
 
@@ -299,18 +299,18 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 
 func getLocalIp() (string, error) {
 	addrs, err := net.InterfaceAddrs()
-    if err != nil {
-        return "", err
-    }
-    for _, address := range addrs {
-        // check the address type and if it is not a loopback then display it
-        if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-            if ipnet.IP.To4() != nil {
-                return ipnet.IP.String(), nil
-            }
-        }
-    }
-    return "", err
+	if err != nil {
+		return "", err
+	}
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback then display it
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String(), nil
+			}
+		}
+	}
+	return "", err
 }
 
 func getPort(addr net.Addr) string {
@@ -343,9 +343,6 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 }
 
 func sendToClient(conn net.Conn, message string) {
-	_, err := conn.Write([]byte(message + "\n"))
-	log.Println(message)
-	if err != nil {
-		log.Println(err)
-	}
+	conn.Write([]byte(message + "\n"))
+	log.Println(message + "\n")
 }

@@ -73,7 +73,7 @@ Returns an array containing the names of the client that are consuming a queue
 The `Queue` struct is having multiple changes. Due to this you need to call `pigna.CreateQueueStruct` to get a basic `Queue` config. By default it sets the `NeedsAck` to false and `QueueType` to normal. You can change the `QueueType` value to these values:
 
 - normal : all the messages will be sent in broadcast to all the Consumers
-- loadBalanced : every message will be routed to Consumers using a Round Robin algorithm
+- roundRobin : every message will be routed to Consumers using a Round Robin algorithm
 
 #### (q Queue) DestroyQueue()
 It destroys the queue from the daemon

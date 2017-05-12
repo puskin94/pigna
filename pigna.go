@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net"
 	"strings"
 	"time"
-	"errors"
 
 	"github.com/satori/go.uuid"
 )
@@ -94,7 +94,7 @@ func Connect(hostname, port, sn string) (PignaConnection, error) {
 }
 
 func (pignaConn PignaConnection) Disconnect() {
-	for ;; {
+	for {
 		keepConsuming := false
 		for _, queue := range localQueueList {
 			if queue.IsConsuming {
@@ -113,7 +113,7 @@ func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) 
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "checkQueueName",
-		Queue: Queue {
+		Queue: Queue{
 			QueueName: queueName,
 		},
 	}
@@ -137,7 +137,7 @@ func (q Queue) GetNumberOfPaired() (int, error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "getNumOfPaired",
-		Queue: q,
+		Queue:      q,
 	}
 	writeToClient(q.ConnHostOwner.Connection, req.String())
 	res, err := waitForResponse(q.ConnHostOwner)
@@ -148,7 +148,7 @@ func (q Queue) GetNumberOfUnacked() (int, error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "getNumOfUnacked",
-		Queue: q,
+		Queue:      q,
 	}
 	writeToClient(q.ConnHostOwner.Connection, req.String())
 	res, err := waitForResponse(q.ConnHostOwner)
@@ -159,7 +159,7 @@ func (q Queue) GetNumberOfUnconsumed() (int, error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "getNumOfUnconsumed",
-		Queue: q,
+		Queue:      q,
 	}
 	writeToClient(q.ConnHostOwner.Connection, req.String())
 	res, err := waitForResponse(q.ConnHostOwner)
@@ -170,7 +170,7 @@ func (q Queue) GetNamesOfPaired() ([]string, error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "getNamesOfPaired",
-		Queue: q,
+		Queue:      q,
 	}
 	writeToClient(q.ConnHostOwner.Connection, req.String())
 	res, err := waitForResponse(q.ConnHostOwner)
@@ -202,10 +202,10 @@ func (pignaConn PignaConnection) GetNumberOfQueues() (int, error) {
 }
 
 func CreateQueueStruct(queueName string) Queue {
-	queueStruct := Queue {
+	queueStruct := Queue{
 		QueueName: queueName,
 		QueueType: "normal",
-		NeedsAck: false,
+		NeedsAck:  false,
 	}
 	return queueStruct
 }
@@ -214,33 +214,27 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "createQueue",
-		Queue: q,
+		Queue:      q,
 	}
 	writeToClient(pignaConn.Connection, req.String())
 	res, err := waitForResponse(pignaConn)
 
 	if res.ResponseType == "success" {
 
-		// var piConn PignaConnection
 		var newQueue Queue
 		dec, _ := base64.StdEncoding.DecodeString(res.ResponseTextStringEncoded)
 		json.Unmarshal([]byte(dec), &newQueue)
 		localQueueList[q.QueueName] = &newQueue
 
-		if (newQueue.HostOwner == pignaConn.Hostname ||
-			newQueue.HostOwner == "") &&
+		if newQueue.HostOwner == pignaConn.Hostname &&
 			newQueue.PortOwner == pignaConn.Port {
-
-			if newQueue.HostOwner == "" {
-				localQueueList[q.QueueName].HostOwner = pignaConn.Hostname
-			}
 
 			localQueueList[q.QueueName].ConnHostOwner = pignaConn
 		} else {
 			conn, err := Connect(newQueue.HostOwner, newQueue.PortOwner, senderName)
 			if err != nil {
 				delete(localQueueList, q.QueueName)
-				return q, errors.New("Cannot connect to the host "+
+				return q, errors.New("Cannot connect to the host " +
 					res.ResponseTextString)
 			}
 			localQueueList[q.QueueName].ConnHostOwner = conn
@@ -251,7 +245,6 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 			if err != nil {
 				return q, errors.New("Error connecting to the serverg")
 			}
-
 		}
 
 	} else {
@@ -265,7 +258,7 @@ func (q Queue) DestroyQueue() (Response, error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "destroyQueue",
-		Queue: q,
+		Queue:      q,
 	}
 	writeToClient(q.ConnHostOwner.Connection, req.String())
 	res, err := waitForResponse(q.ConnHostOwner)
@@ -276,12 +269,12 @@ func (q Queue) DestroyQueue() (Response, error) {
 	return res, err
 }
 
-func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
+func (q Queue) ConsumeQueue(callback func(Queue, Response)) error {
 
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "consumeQueue",
-		Queue: q,
+		Queue:      q,
 	}
 
 	_, isPresent := localQueueList[q.QueueName]
@@ -293,7 +286,6 @@ func (q Queue) ConsumeQueue(callback func(Queue, Response)) (error) {
 	res, _ := waitForResponse(q.ForwardConn)
 
 	if res.ResponseType == "success" {
-
 		localQueueList[q.QueueName].IsConsuming = true
 		go consume(q, callback)
 	}
@@ -304,7 +296,7 @@ func (q Queue) RemoveConsumer() (Response, error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "removeConsumer",
-		Queue: q,
+		Queue:      q,
 	}
 
 	writeToClient(q.ConnHostOwner.Connection, req.String())
@@ -324,7 +316,7 @@ func (q Queue) HasBeenAcked(messageUUID uuid.UUID) (bool, error) {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "hasBeenAcked",
-		Queue: q,
+		Queue:      q,
 		Message: Message{
 			UUID: messageUUID.String(),
 		},
@@ -355,7 +347,11 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 		var req Request = Request{
 			SenderName: senderName,
 			Action:     "sendMsg",
-			Queue: q,
+			Queue: Queue {
+				QueueName: q.QueueName,
+				QueueType: q.QueueType,
+				NeedsAck: q.NeedsAck,
+			},
 			Message: Message{
 				Body: encodedMessage,
 				UUID: u1.String(),
@@ -369,7 +365,7 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "sendMsg",
-		Queue: q,
+		Queue:      q,
 	}
 
 	for i := 0; i < len(messageChunks); i++ {
@@ -447,10 +443,10 @@ func consume(q Queue, callback func(Queue, Response)) {
 							QueueName: response.QueueName,
 						},
 						Message: Message{
-							MsgId: response.MsgId,
+							UUID: response.MsgUUID,
 						},
 					}
-					writeToClient(q.ConnHostOwner.Connection, req.String())
+					writeToClient(q.ForwardConn.Connection, req.String())
 				}
 				callback(q, response)
 			}
