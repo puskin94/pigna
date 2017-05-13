@@ -14,7 +14,8 @@ On this port the client will perform basic operations that will not involve cons
 If on a queue there are only publishers and no consumers, all the sent messages are stored by the daemon and sent when a consumer `Pairs` to a queue.
 
 ## Clustering
-Is possible to add another `pignaDaemon` with the flag `--clusterHost=<main pigna daemon ip>:<main pigna daemon port>` to create another instance that can handle queues too. <br>
+Is possible to add another `pignaDaemon` with the flag `--clusterHost=<main pigna daemon ip> --clusterPort=<main pigna daemon port>` to create another instance that can handle queues too.
+
 The `Pigna` client will create a connection to the main daemon and new queues will be created on the daemon which contains less; if the daemon is a *clustered instance* the client will use that connection to send and receive messages.
 
 
