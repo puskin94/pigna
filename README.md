@@ -8,6 +8,7 @@
 
 ## How does it works?
 Producers and Consumers communicate thanks to a daemon called (to be creative) **pignaDaemon**; just run it (`go run daemon/pignaDaemon.go`) and you are ready to go. It listens on the port number **16789** but you can change it specifying the `--port` param.
+
 On this port the client will perform basic operations that will not involve consuming or publishing messages. For that type of actions the `pignaDaemon` will expose a random free port where to send messages.
 
 If on a queue there are only publishers and no consumers, all the sent messages are stored by the daemon and sent when a consumer `Pairs` to a queue.
@@ -99,5 +100,7 @@ Given an `uuid.UUID` it returns if a message has been acked or not
 
 #### 0.0.8
 Added basic testing
+
 Sending and Consuming are now on a different port
+
 Changed from "loadBalanced" to "roundRobin"
