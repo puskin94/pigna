@@ -194,18 +194,16 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 			port := getPort(l.Addr())
 			l.Close()
 
-			fwConn := pigna.PignaConnection{
-				Hostname: thisHost,
-				Port:     port,
-			}
-
 			var pignaQueue pigna.Queue = pigna.Queue{
 				QueueName:   msgAct.Queue.QueueName,
 				QueueType:   msgAct.Queue.QueueType,
 				NeedsAck:    msgAct.Queue.NeedsAck,
 				HostOwner:   thisHost,
 				PortOwner:   thisPort,
-				ForwardConn: fwConn,
+				ForwardConn: pigna.PignaConnection{
+					Hostname: thisHost,
+					Port:     port,
+				},
 			}
 
 			queueList.Queues[msgAct.Queue.QueueName].ServerQueue.ForwardPort = port

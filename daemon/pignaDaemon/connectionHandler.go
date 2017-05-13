@@ -75,7 +75,6 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"getNumOfUnacked":    actionGetNumOfUnacked,
 	"getNumOfUnconsumed": actionGetNumOfUnconsumed,
 	"getNumOfQueues":     actionGetNumOfQueues,
-	"msgAck":             actionAckMessage,
 	"hasBeenAcked":       actionHasBeenAcked,
 	"destroyQueue":       actionDestroyQueue,
 	"removeConsumer":     actionRemoveConsumer,
@@ -177,7 +176,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		log.Println(msg)
+		// log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -344,5 +343,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	log.Println(message + "\n")
+	// log.Println(message + "\n")
 }

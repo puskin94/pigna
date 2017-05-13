@@ -8,7 +8,7 @@ import (
 
 const (
 	swName    = "Pigna"
-	swVersion = "0.0.1"
+	swVersion = "0.0.8"
 )
 
 func main() {

@@ -8,6 +8,7 @@
 
 ## How does it works?
 Producers and Consumers communicate thanks to a daemon called (to be creative) **pignaDaemon**; just run it (`go run daemon/pignaDaemon.go`) and you are ready to go. It listens on the port number **16789** but you can change it specifying the `--port` param.
+On this port the client will perform basic operations that will not involve consuming or publishing messages. For that type of actions the `pignaDaemon` will expose a random free port where to send messages.
 
 If on a queue there are only publishers and no consumers, all the sent messages are stored by the daemon and sent when a consumer `Pairs` to a queue.
 
@@ -15,19 +16,6 @@ If on a queue there are only publishers and no consumers, all the sent messages 
 Is possible to add another `pignaDaemon` with the flag `--clusterHost=<main pigna daemon ip>:<main pigna daemon port>` to create another instance that can handle queues too. <br>
 The `Pigna` client will create a connection to the main daemon and new queues will be created on the daemon which contains less; if the daemon is a *clustered instance* the client will use that connection to send and receive messages.
 
-### config.json
-This file is mandatory because it contains useful informations:
-
-* the client name
-
-TO ADD
-```
-
-the server ip (TODO. Now this information is provided through the commandline)
-
-the client authentication (TODO)
-
-```
 
 ### Queues
 Every message is routed on *queues* and on every *queue* are listening one or more consumers. Every consumer receives, unmarshall and handles the message
@@ -39,8 +27,8 @@ Every message is routed on *queues* and on every *queue* are listening one or mo
 
 Message communication is made easy thanks to the apis provided by the **pigna** lib:
 
-#### Connect(hostname string, senderName string) (PignaConnection, error)
-It creates the connection to the daemon and returns the object mandatory for all the further actions. The hostname must be in the `hostname:port` form
+#### Connect(hostname, port, senderName string) (PignaConnection, error)
+It creates the connection to the daemon and returns the object mandatory for all the further actions.
 
 #### (pignaConn PignaConnection) Disconnect()
 It closes the connection to the daemon
@@ -49,10 +37,7 @@ It closes the connection to the daemon
 It returns true if the `queueName` exists, false if not
 
 #### (pignaConn PignaConnection) CreateQueue(queueStruct Queue) (Queue, error)
-This function creates a *Queue*. You need to specify the `Queue` struct that contains infos about the `Queue` type.
-
-#### (pignaConn PignaConnection) GetQueue(queueName string) (Queue, error)
-Returns a `Queue` with the proper connection socket.
+This function creates a *Queue*. You need to specify the `Queue` struct that contains infos about the `Queue` type. If the queue already exists, it returns a `Queue` struct ready to be consumed or to publish in.
 
 #### (pignaConn PignaConnection) GetQueueNames() ([]string, error)
 Returns an array containing all the existing queues

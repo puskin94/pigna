@@ -365,7 +365,11 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "sendMsg",
-		Queue:      q,
+		Queue: Queue {
+			QueueName: q.QueueName,
+			QueueType: q.QueueType,
+			NeedsAck: q.NeedsAck,
+		},
 	}
 
 	for i := 0; i < len(messageChunks); i++ {
@@ -436,22 +440,26 @@ func consume(q Queue, callback func(Queue, Response)) {
 
 			if response.ResponseType == "recvMsg" {
 				if response.NeedsAck {
-					var req Request = Request{
-						SenderName: senderName,
-						Action:     "msgAck",
-						Queue: Queue{
-							QueueName: response.QueueName,
-						},
-						Message: Message{
-							UUID: response.MsgUUID,
-						},
-					}
-					writeToClient(q.ForwardConn.Connection, req.String())
+					ackMessage(q.ForwardConn.Connection, response)
 				}
 				callback(q, response)
 			}
 		}
 	}
+}
+
+func ackMessage(conn net.Conn, res Response) {
+	var req Request = Request{
+		SenderName: senderName,
+		Action:     "msgAck",
+		Queue: Queue{
+			QueueName: res.QueueName,
+		},
+		Message: Message{
+			UUID: res.MsgUUID,
+		},
+	}
+	writeToClient(conn, req.String())
 }
 
 func waitForResponse(pignaConn PignaConnection) (Response, error) {
