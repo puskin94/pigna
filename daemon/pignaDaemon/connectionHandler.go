@@ -20,9 +20,9 @@ import (
 
 type MsgAction struct {
 	Action     string
-	SenderName string
-	Message    Message
-	Queue      Queue
+	SenderName string  `msgpack:",omitempty"`
+	Message    Message `msgpack:",omitempty"`
+	Queue      Queue   `msgpack:",omitempty"`
 }
 
 type ClusterNode struct {
@@ -57,13 +57,13 @@ type Client struct {
 }
 
 type Message struct {
-	Body        string
-	MsgId       int
-	MsgUUID     string
-	IsAChunk    bool
-	NChunk      int
-	TotalChunks int
-	SenderName  string
+	Body        string `msgpack:",omitempty"`
+	MsgId       int    `msgpack:",omitempty"`
+	MsgUUID     string `msgpack:",omitempty"`
+	IsAChunk    bool   `msgpack:",omitempty"`
+	NChunk      int    `msgpack:",omitempty"`
+	TotalChunks int    `msgpack:",omitempty"`
+	SenderName  string `msgpack:",omitempty"`
 	SenderConn  net.Conn
 }
 

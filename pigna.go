@@ -12,53 +12,53 @@ import (
 )
 
 type PignaConnection struct {
-	Connection net.Conn
-	Hostname   string
-	Port       string
+	Connection net.Conn `msgpack:",omitempty"`
+	Hostname   string   `msgpack:",omitempty"`
+	Port       string   `msgpack:",omitempty"`
 }
 
 type Response struct {
 	ResponseType       string
-	ResponseTextString string
-	ResponseTextInt    int
-	ResponseTextBool   bool
-	SenderName         string
+	ResponseTextString string `msgpack:",omitempty"`
+	ResponseTextInt    int    `msgpack:",omitempty"`
+	ResponseTextBool   bool   `msgpack:",omitempty"`
+	SenderName         string `msgpack:",omitempty"`
 	QueueName          string
-	MsgId              int
-	MsgUUID            string
-	NeedsAck           bool
-	IsAChunk           bool
-	NChunk             int
-	TotalChunks        int
-	QueueInfo          Queue
+	MsgId              int    `msgpack:",omitempty"`
+	MsgUUID            string `msgpack:",omitempty"`
+	NeedsAck           bool   `msgpack:",omitempty"`
+	IsAChunk           bool   `msgpack:",omitempty"`
+	NChunk             int    `msgpack:",omitempty"`
+	TotalChunks        int    `msgpack:",omitempty"`
+	QueueInfo          Queue  `msgpack:",omitempty"`
 }
 
 type Request struct {
-	SenderName string
+	SenderName string `msgpack:",omitempty"`
 	Action     string
-	Queue      Queue
-	Message    Message
+	Queue      Queue   `msgpack:",omitempty"`
+	Message    Message `msgpack:",omitempty"`
 }
 
 type Queue struct {
-	QueueName     string
-	QueueType     string
-	NeedsAck      bool
-	HostOwner     string
-	PortOwner     string
-	IsConsuming   bool
-	ConnHostOwner PignaConnection
-	ForwardConn   PignaConnection
-	ClientConn    net.Conn
+	QueueName     string          `msgpack:",omitempty"`
+	QueueType     string          `msgpack:",omitempty"`
+	NeedsAck      bool            `msgpack:",omitempty"`
+	HostOwner     string          `msgpack:",omitempty"`
+	PortOwner     string          `msgpack:",omitempty"`
+	IsConsuming   bool            `msgpack:",omitempty"`
+	ConnHostOwner PignaConnection `msgpack:",omitempty"`
+	ForwardConn   PignaConnection `msgpack:",omitempty"`
+	ClientConn    net.Conn        `msgpack:",omitempty"`
 }
 
 type Message struct {
-	Body        string
-	UUID        string
-	IsAChunk    bool
-	NChunk      int
-	TotalChunks int
-	MsgId       int
+	Body        string `msgpack:",omitempty"`
+	UUID        string `msgpack:",omitempty"`
+	IsAChunk    bool   `msgpack:",omitempty"`
+	NChunk      int    `msgpack:",omitempty"`
+	TotalChunks int    `msgpack:",omitempty"`
+	MsgId       int    `msgpack:",omitempty"`
 }
 
 var localQueueList map[string]*Queue
