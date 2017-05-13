@@ -1,38 +1,13 @@
 package pignaDaemon
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"github.com/puskin94/pigna"
+	"log"
 	"net"
 	"strings"
-	"log"
-	"encoding/json"
-	"encoding/base64"
-	"github.com/puskin94/pigna"
 )
-
-// func actionDistributeQueues(conn net.Conn, msgAct MsgAction) {
-// 	// numQueues := len(queueList.Queues)
-// 	totNumQueues := 0
-// 	numClusterNodes := len(clusterNodes)
-//
-// 	for hostname, _ := range clusterNodes {
-// 		// // act like a normal pigna request
-// 		// req := MsgAction{
-// 		// 	Action: "getQueueNames",
-// 		// }
-// 		//
-// 		// reqString, _ := json.Marshal(req)
-// 		// sendToClient(mainPigna, string(reqString))
-// 		pignaConn, err := pigna.Connect(hostname, "")
-// 		if err != nil {
-// 			log.Println("Host " + hostname + " is unreachable!")
-// 			continue
-// 		}
-// 		num, _ := pignaConn.GetNumberOfQueues()
-//
-// 		pignaConn.Disconnect()
-// 		totNumQueues += num
-// 	}
-// }
 
 func actionAddClusterNode(conn net.Conn, msgAct MsgAction) {
 	for hostname, node := range clusterNodes {
@@ -44,9 +19,9 @@ func actionAddClusterNode(conn net.Conn, msgAct MsgAction) {
 
 	var queueList QueueList
 	queueList.Queues = make(map[string]*Queue)
-	clusterNodes[msgAct.Message.Body] = ClusterNode {
+	clusterNodes[msgAct.Message.Body] = ClusterNode{
 		Connection: conn,
-		QueueList: &queueList,
+		QueueList:  &queueList,
 	}
 }
 
@@ -89,70 +64,6 @@ func actionCheckQueueName(conn net.Conn, msgAct MsgAction) {
 		writeMessageBool(conn, "error", false)
 	} else {
 		writeMessageBool(conn, "success", true)
-	}
-}
-
-func actionGetQueue(conn net.Conn, msgAct MsgAction) {
-	// if res.ResponseTextString == "" {
-	// 	host := pignaConn
-	// } else {
-	// 	host, err := Connect(res.ResponseTextString, senderName)
-	// 	if err != nil {
-	// 		localQueueList[q.QueueName].ConnHostOwner = conn
-	// 	} else {
-	// 		return queue, errors.New("Cannot connect to the host "+
-	// 			res.ResponseTextString)
-	// 	}
-	// }
-	isPresent, host, err := checkQueueName(msgAct.Queue)
-	if !isPresent {
-		writeMessageString(conn, "error", err.Error())
-		return
-	}
-	// the queue is here locally
-	var queue Queue
-	if host == "" {
-		queue = *queueList.Queues[msgAct.Queue.QueueName]
-	} else {
-		queue = *clusterNodes[host].QueueList.Queues[msgAct.Queue.QueueName]
-	}
-
-	type PignaQueue struct {
-		QueueName     string          `json:"queueName"`
-		QueueType     string          `json:"queueType"`
-		NeedsAck      bool            `json:"needsAck"`
-		HostOwner     string          `json:"hostOwner"`
-		IsConsuming   bool            `json:"isConsuming"`
-	}
-
-	var pignaQueue PignaQueue = PignaQueue {
-		QueueName: queue.QueueName,
-		QueueType: queue.QueueType,
-		NeedsAck: queue.NeedsAck,
-		HostOwner: host,
-		IsConsuming: false,
-	}
-
-	queueString, _ := json.Marshal(pignaQueue)
-	writeMessageStringEncoded(conn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
-}
-
-func actionAckMessage(conn net.Conn, msgAct MsgAction) {
-	isPresent, _, err := checkQueueName(msgAct.Queue)
-	if !isPresent {
-		writeMessageString(conn, "error", err.Error())
-		return
-	}
-
-	if !queueList.Queues[msgAct.Queue.QueueName].NeedsAck {
-		return
-	}
-	for msgIdx, msg := range queueList.Queues[msgAct.Queue.QueueName].UnackedMessages {
-		if msg.MsgId == msgAct.Message.MsgId {
-			queueList.Queues[msgAct.Queue.QueueName].UnackedMessages =
-				append(queueList.Queues[msgAct.Queue.QueueName].UnackedMessages[:msgIdx],
-					queueList.Queues[msgAct.Queue.QueueName].UnackedMessages[msgIdx+1:]...)
-		}
 	}
 }
 
@@ -210,162 +121,111 @@ func actionDestroyQueue(conn net.Conn, msgAct MsgAction) {
 		" destroyed")
 }
 
-func actionSendMsg(conn net.Conn, msgAct MsgAction) {
-	isPresent, _, err := checkQueueName(msgAct.Queue)
-	if !isPresent {
-		writeMessageString(conn, "error", err.Error())
-		return
-	}
-
-	msgAct.Message.SenderConn = conn
-	msgAct.Message.SenderName = msgAct.SenderName
-
-	queue := queueList.Queues[msgAct.Queue.QueueName]
-
-	queue.MutexCounter.Lock()
-	queue.MsgCounter++
-	msgAct.Message.MsgId = queue.MsgCounter
-	queue.MutexCounter.Unlock()
-
-	// "normal" == send messages to all
-	if queue.QueueType == "normal" {
-		// if there are no `Consumers`, add to the queue
-		if len(queue.Consumers) == 0 {
-			queue.addUnconsumedMessage(msgAct.Message)
-		} else {
-			broadcastToQueue(*queue,
-				msgAct.Message)
-		}
-	// "loadBalanced" == send messages to connections in RoundRobin mode
-	} else if queue.QueueType == "loadBalanced" {
-		msg := formatMessage(*queue, msgAct.Message)
-		sendToClient(queue.Consumers[queue.LastRRIdx-1].Connection, msg)
-		// circolar list
-		if queue.LastRRIdx % len(queue.Consumers) == 0 {
-			queue.LastRRIdx = 1
-		} else {
-			queue.LastRRIdx++
-		}
-	}
-}
-
-func actionHasBeenAcked(conn net.Conn, msgAct MsgAction) {
-	isPresent, _, err := checkQueueName(msgAct.Queue)
-	if !isPresent {
-		writeMessageString(conn, "error", err.Error())
-		return
-	}
-	for _, q := range queueList.Queues[msgAct.Queue.QueueName].UnackedMessages {
-		if q.MsgUUID == msgAct.Message.MsgUUID {
-			writeMessageBool(conn, "success", false)
-			return
-		}
-	}
-	writeMessageBool(conn, "success", true)
-}
-
 func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
-	if !thisIsANode {
-		isPresent, _, _ := checkQueueName(msgAct.Queue)
-		if isPresent {
-			writeMessageString(conn, "error", "This queueName already exists")
-			return
-		}
-	}
-
-	var validQueueTypes = map[string]bool{
-		"normal": true,
-		"loadBalanced": true,
-	}
-
-	_, isValid := validQueueTypes[msgAct.Queue.QueueType]
-	if !isValid {
-		writeMessageString(conn, "error", "Invalid queue type")
-		return
-	}
-
-	// if there are available cluster nodes, distribute new Queues
-	// just add the new queue to who owns the minimum number
-	min := len(queueList.Queues)
-	selectedHostname := ""
-	for hostname, _ := range clusterNodes {
-		numQueues := len(clusterNodes[hostname].QueueList.Queues)
-		if numQueues < min {
-			selectedHostname = hostname
-		}
-	}
-
-	var newQueue Queue
-	newQueue.MsgCounter = 0
-	newQueue.LastRRIdx = 1
-	copyQueueStruct(&msgAct, &newQueue)
-	// this local node owns the minimum number of queue
-	if selectedHostname == "" {
-		queueList.addQueue(newQueue)
-		var ret string
-		var clientConn net.Conn
-		if thisIsANode {
-			ret = thisHost
-			clientConn = msgAct.Queue.ClientConn
+	isPresent, host, _ := checkQueueName(msgAct.Queue)
+	// just return the queue
+	if isPresent {
+		// the queue is here locally
+		var queue Queue
+		var port string
+		if host == "" {
+			queue = *queueList.Queues[msgAct.Queue.QueueName]
+			host = thisHost
+			port = thisPort
 		} else {
-			ret = ""
-			clientConn = conn
+			queue = *clusterNodes[host].QueueList.Queues[msgAct.Queue.QueueName]
+			port = clusterNodes[host].Port
 		}
-		writeMessageString(clientConn, "success", ret)
+
+		var pignaQueue pigna.Queue = pigna.Queue{
+			QueueName: queue.QueueName,
+			QueueType: queue.QueueType,
+			NeedsAck:  queue.NeedsAck,
+			ForwardConn: pigna.PignaConnection{
+				Port: queue.ServerQueue.ForwardPort,
+			},
+			HostOwner: host,
+			PortOwner: port,
+		}
+
+		queueString, _ := json.Marshal(pignaQueue)
+		writeMessageStringEncoded(conn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
 	} else {
-		// update the local cache
-		clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
-		pignaConn, err := pigna.Connect(selectedHostname, "")
-		if err != nil {
-			log.Println("Host " + selectedHostname + " is unreachable!")
+
+		var validQueueTypes = map[string]bool{
+			"normal":     true,
+			"roundRobin": true,
+		}
+
+		_, isValid := validQueueTypes[msgAct.Queue.QueueType]
+		if !isValid {
+			writeMessageString(conn, "error", "Invalid queue type")
 			return
 		}
-		queueStruct := pigna.CreateQueueStruct(msgAct.Queue.QueueName)
-		queueStruct.QueueType = msgAct.Queue.QueueType
-		queueStruct.NeedsAck = msgAct.Queue.NeedsAck
-		queueStruct.ClientConn = conn
-		pignaConn.CreateQueue(queueStruct)
-	}
-}
 
-func actionConsumeQueue(conn net.Conn, msgAct MsgAction) {
-	var consumerHasChangedSocket bool = false
-	isPresent, clusterNode, err := checkQueueName(msgAct.Queue)
-	if !isPresent {
-		writeMessageString(conn, "error", err.Error())
-		return
-	}
+		// if there are available cluster nodes, distribute new Queues
+		// just add the new queue to who owns the minimum number
+		min := len(queueList.Queues)
+		selectedHostname := ""
+		for hostname, _ := range clusterNodes {
+			numQueues := len(clusterNodes[hostname].QueueList.Queues)
+			if numQueues < min {
+				selectedHostname = hostname
+			}
+		}
 
-	// the queue to Consume is on another pignaDaemon!
-	if clusterNode != "" {
-		writeMessageString(conn, "error", "This queue is in another daemon")
-		return
-	}
+		var newQueue Queue
+		newQueue.MsgCounter = 0
+		newQueue.LastRRIdx = 1
+		copyQueueStruct(&msgAct, &newQueue)
+		// var pignaConn pigna.PignaConnection
+		// this local node owns the minimum number of queue
+		if selectedHostname == "" {
+			queueList.addQueue(newQueue)
+			var clientConn net.Conn
+			if thisIsANode {
+				clientConn = msgAct.Queue.ClientConn
+			} else {
+				clientConn = conn
+			}
 
-	consumerIdx, err := checkConsumers(conn, msgAct.Queue.QueueName, msgAct.SenderName)
+			// get a free port where to listen
+			l, _ := net.Listen("tcp", "")
+			port := getPort(l.Addr())
+			l.Close()
 
-	if err == nil {
-		// update che conn socket if the same consumer has changed it
-		if queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].Connection != conn {
-			queueList.Queues[msgAct.Queue.QueueName].Consumers[consumerIdx].Connection = conn
-			consumerHasChangedSocket = true
+			var pignaQueue pigna.Queue = pigna.Queue{
+				QueueName: msgAct.Queue.QueueName,
+				QueueType: msgAct.Queue.QueueType,
+				NeedsAck:  msgAct.Queue.NeedsAck,
+				HostOwner: thisHost,
+				PortOwner: thisPort,
+				ForwardConn: pigna.PignaConnection{
+					Hostname: thisHost,
+					Port:     port,
+				},
+			}
+
+			queueList.Queues[msgAct.Queue.QueueName].ServerQueue.ForwardPort = port
+			go createServerQueue(*queueList.Queues[msgAct.Queue.QueueName], port)
+
+			queueString, _ := json.Marshal(pignaQueue)
+			writeMessageStringEncoded(clientConn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
+
 		} else {
-			writeMessageString(conn, "error", "Already consuming this queue")
-			return
+			// update the local cache
+			clusterNodes[selectedHostname].QueueList.addQueue(newQueue)
+			pignaConn, err := pigna.Connect(selectedHostname,
+				clusterNodes[selectedHostname].Port, "")
+			if err != nil {
+				log.Println("Host " + selectedHostname + " is unreachable!")
+				return
+			}
+			queueStruct := pigna.CreateQueueStruct(msgAct.Queue.QueueName)
+			queueStruct.QueueType = msgAct.Queue.QueueType
+			queueStruct.NeedsAck = msgAct.Queue.NeedsAck
+			queueStruct.ClientConn = conn
+			pignaConn.CreateQueue(queueStruct)
 		}
-	}
-
-	// adding the connection to the proper queue `Consumers` only if there is a new socket
-	if !consumerHasChangedSocket {
-		queueList.Queues[msgAct.Queue.QueueName].addConsumer(conn, msgAct.SenderName)
-	}
-	writeMessageString(conn, "success", "")
-
-	// clear the queue sending the `UnconsumedMessages`
-	for _, _ = range queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages {
-		broadcastToQueue(*queueList.Queues[msgAct.Queue.QueueName],
-			queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages[0])
-		queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages =
-			queueList.Queues[msgAct.Queue.QueueName].UnconsumedMessages[1:]
 	}
 }

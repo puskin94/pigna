@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -26,6 +27,7 @@ type MsgAction struct {
 type ClusterNode struct {
 	QueueList  *QueueList
 	Connection net.Conn
+	Port       string
 }
 
 type QueueList struct {
@@ -38,6 +40,7 @@ type Queue struct {
 	NeedsAck           bool     `json:"needsAck"`
 	HostOwner          string   `json:"hostOwner,omitempty"`
 	ClientConn         net.Conn `json:"clientConn,omitempty"`
+	ServerQueue        Client
 	Consumers          []Client
 	UnconsumedMessages []Message
 	UnackedMessages    []Message
@@ -47,8 +50,9 @@ type Queue struct {
 }
 
 type Client struct {
-	Connection net.Conn
-	Name       string
+	ForwardConn net.Conn
+	ForwardPort string
+	Name        string
 }
 
 type Message struct {
@@ -66,24 +70,22 @@ var validActions = map[string]func(net.Conn, MsgAction){
 	"getNumOfPaired":     actionGetNumberOfPaired,
 	"createQueue":        actionCreateQueue,
 	"checkQueueName":     actionCheckQueueName,
-	"consumeQueue":       actionConsumeQueue,
 	"getNamesOfPaired":   actionGetNamesOfPaired,
 	"getQueueNames":      actionGetQueueNames,
 	"getNumOfUnacked":    actionGetNumOfUnacked,
 	"getNumOfUnconsumed": actionGetNumOfUnconsumed,
 	"getNumOfQueues":     actionGetNumOfQueues,
-	"sendMsg":            actionSendMsg,
-	"msgAck":             actionAckMessage,
 	"hasBeenAcked":       actionHasBeenAcked,
 	"destroyQueue":       actionDestroyQueue,
 	"removeConsumer":     actionRemoveConsumer,
 	"newClusterNode":     actionAddClusterNode,
-	"getQueue":           actionGetQueue,
 }
 
+var thisPort string
 var thisHost string
 var thisIsANode bool
 var clusterHost string
+var clusterPort string
 var queueList QueueList
 var clusterNodes map[string]ClusterNode
 var waitingForCreateResponse map[string]net.Conn
@@ -98,9 +100,9 @@ func (q *QueueList) destroyQueue(queueName string) map[string]*Queue {
 	return q.Queues
 }
 
-func (q *Queue) addConsumer(conn net.Conn, senderName string) []Client {
+func (q *Queue) addConsumer(forwardConn net.Conn, senderName string) []Client {
 	var c Client
-	c.Connection = conn
+	c.ForwardConn = forwardConn
 	c.Name = senderName
 	q.Consumers = append(q.Consumers, c)
 	return q.Consumers
@@ -111,13 +113,13 @@ func (q *Queue) addUnconsumedMessage(message Message) []Message {
 	return q.UnconsumedMessages
 }
 
-func StartServer(host, port, ch string) {
+func StartServer(host, port, ch, cp string) {
 	l, err := net.Listen("tcp", host+":"+port)
 	if err != nil {
 		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
-
+	thisPort = port
 	thisHost, ipErr := getLocalIp()
 	if ipErr != nil {
 		log.Println("Error getting local ip")
@@ -125,9 +127,10 @@ func StartServer(host, port, ch string) {
 	}
 
 	// this pignaDaemon will be a clustered instance of a main pignaDaemon
-	if ch != "" && thisHost != "" {
+	if ch != "" && thisHost != "" && cp != "" {
 		clusterHost = ch
-		errMainPigna := askToJoinAsNodeCluster(clusterHost)
+		clusterPort = cp
+		errMainPigna := askToJoinAsNodeCluster(ch, cp)
 		if errMainPigna != nil {
 			log.Println("Error connecting to :", clusterHost, errMainPigna.Error())
 			return
@@ -153,8 +156,8 @@ func StartServer(host, port, ch string) {
 	}
 }
 
-func askToJoinAsNodeCluster(clusterHost string) error {
-	mainPigna, err := net.Dial("tcp", clusterHost)
+func askToJoinAsNodeCluster(clusterHost, clusterPort string) error {
+	mainPigna, err := net.Dial("tcp", clusterHost+":"+clusterPort)
 
 	// act like a normal pigna request
 	req := MsgAction{
@@ -173,7 +176,7 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		log.Println(msg)
+		// log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := json.Unmarshal([]byte(msg), &msgAct)
@@ -198,30 +201,32 @@ func (q *Queue) deleteConsumer(clIdx int) []Client {
 	return q.Consumers
 }
 
-func broadcastToQueue(q Queue, message Message) {
+func broadcastToQueue(q *Queue, message Message) {
 	// send the body to all the Consumers connections
 	for idx, _ := range q.Consumers {
-		msg := formatMessage(q, message)
+		msg := formatMessage(*q, message)
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
-		sendToClient(q.Consumers[idx].Connection, msg)
+		// log.Println(q.UnackedMessages)
+		sendToClient(q.Consumers[idx].ForwardConn, msg)
 	}
 }
 
 func formatMessage(q Queue, message Message) string {
 	msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", `+
 		`"responseTextString": "%s", "senderName": "%s", "msgId": %d,`+
-		`"needsAck": %v, "isAChunk": %v, "nChunk": %d, "totalChunks": %d}`,
+		`"needsAck": %v, "isAChunk": %v, "nChunk": %d, "totalChunks": %d,`+
+		`"UUID": "%s"}`,
 		q.QueueName, message.Body, message.SenderName,
 		message.MsgId, q.NeedsAck, message.IsAChunk, message.NChunk,
-		message.TotalChunks)
+		message.TotalChunks, message.MsgUUID)
 	return msg
 }
 
 func checkConsumers(conn net.Conn, queueName string, consumerName string) (int, error) {
 	for idx, _ := range queueList.Queues[queueName].Consumers {
-		if conn == queueList.Queues[queueName].Consumers[idx].Connection ||
+		if conn == queueList.Queues[queueName].Consumers[idx].ForwardConn ||
 			consumerName == queueList.Queues[queueName].Consumers[idx].Name {
 			return idx, nil
 		}
@@ -293,18 +298,23 @@ func checkMsgParameters(m *MsgAction) (bool, string, string) {
 
 func getLocalIp() (string, error) {
 	addrs, err := net.InterfaceAddrs()
-    if err != nil {
-        return "", err
-    }
-    for _, address := range addrs {
-        // check the address type and if it is not a loopback then display it
-        if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-            if ipnet.IP.To4() != nil {
-                return ipnet.IP.String(), nil
-            }
-        }
-    }
-    return "", err
+	if err != nil {
+		return "", err
+	}
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback then display it
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String(), nil
+			}
+		}
+	}
+	return "", err
+}
+
+func getPort(addr net.Addr) string {
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr.String())
+	return strconv.Itoa(tcpAddr.Port)
 }
 
 func writeMessageString(conn net.Conn, messageType string, message string) {
@@ -333,5 +343,5 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 
 func sendToClient(conn net.Conn, message string) {
 	conn.Write([]byte(message + "\n"))
-	log.Println(message)
+	// log.Println(message + "\n")
 }
