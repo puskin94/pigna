@@ -2,14 +2,15 @@ package pignaDaemon
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"os"
 	"strconv"
 	"sync"
+
+	"github.com/puskin94/pigna"
+	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 /*
@@ -18,10 +19,10 @@ import (
 */
 
 type MsgAction struct {
-	Action     string  `json:"action"`
-	SenderName string  `json:"senderName,omitempty"`
-	Message    Message `json:"message,omitempty"`
-	Queue      Queue   `json:"queue,omitempty"`
+	Action     string
+	SenderName string
+	Message    Message
+	Queue      Queue
 }
 
 type ClusterNode struct {
@@ -35,11 +36,11 @@ type QueueList struct {
 }
 
 type Queue struct {
-	QueueName          string   `json:"queueName"`
-	QueueType          string   `json:"queueType"`
-	NeedsAck           bool     `json:"needsAck"`
-	HostOwner          string   `json:"hostOwner,omitempty"`
-	ClientConn         net.Conn `json:"clientConn,omitempty"`
+	QueueName          string
+	QueueType          string
+	NeedsAck           bool
+	HostOwner          string
+	ClientConn         net.Conn
 	ServerQueue        Client
 	Consumers          []Client
 	UnconsumedMessages []Message
@@ -56,12 +57,12 @@ type Client struct {
 }
 
 type Message struct {
-	Body        string `json:"body"`
-	MsgId       int    `json:"msgId"`
-	MsgUUID     string `json:"UUID"`
-	IsAChunk    bool   `json:"isAChunk"`
-	NChunk      int    `json:"nChunk"`
-	TotalChunks int    `json:"totalChunks"`
+	Body        string
+	MsgId       int
+	MsgUUID     string
+	IsAChunk    bool
+	NChunk      int
+	TotalChunks int
 	SenderName  string
 	SenderConn  net.Conn
 }
@@ -167,8 +168,7 @@ func askToJoinAsNodeCluster(clusterHost, clusterPort string) error {
 		},
 	}
 
-	reqString, _ := json.Marshal(req)
-	sendToClient(mainPigna, string(reqString))
+	sendToDaemon(mainPigna, req)
 	return err
 }
 
@@ -179,9 +179,9 @@ func handleRequest(conn net.Conn) {
 		// log.Println(msg)
 
 		msgAct := new(MsgAction)
-		err := json.Unmarshal([]byte(msg), &msgAct)
+		err := msgpack.Unmarshal([]byte(msg), &msgAct)
 		if err != nil {
-			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
+			writeMessageString(conn, "error", "Invalid msgpack request. "+err.Error())
 			return
 		}
 
@@ -213,14 +213,19 @@ func broadcastToQueue(q *Queue, message Message) {
 	}
 }
 
-func formatMessage(q Queue, message Message) string {
-	msg := fmt.Sprintf(`{"responseType":"recvMsg", "queueName":"%s", `+
-		`"responseTextString": "%s", "senderName": "%s", "msgId": %d,`+
-		`"needsAck": %v, "isAChunk": %v, "nChunk": %d, "totalChunks": %d,`+
-		`"UUID": "%s"}`,
-		q.QueueName, message.Body, message.SenderName,
-		message.MsgId, q.NeedsAck, message.IsAChunk, message.NChunk,
-		message.TotalChunks, message.MsgUUID)
+func formatMessage(q Queue, message Message) pigna.Response {
+	var msg pigna.Response = pigna.Response{
+		ResponseType:       "recvMsg",
+		QueueName:          q.QueueName,
+		ResponseTextString: message.Body,
+		SenderName:         message.SenderName,
+		MsgId:              message.MsgId,
+		NeedsAck:           q.NeedsAck,
+		IsAChunk:           message.IsAChunk,
+		NChunk:             message.NChunk,
+		TotalChunks:        message.TotalChunks,
+		MsgUUID:            message.MsgUUID,
+	}
 	return msg
 }
 
@@ -318,30 +323,44 @@ func getPort(addr net.Addr) string {
 }
 
 func writeMessageString(conn net.Conn, messageType string, message string) {
-	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextString": "%s"}`,
-		messageType, message)
+	var msg pigna.Response = pigna.Response{
+		ResponseType:       messageType,
+		ResponseTextString: message,
+	}
 	sendToClient(conn, msg)
 }
 
-func writeMessageStringEncoded(conn net.Conn, messageType string, message string) {
-	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextStringEncoded": "%s"}`,
-		messageType, message)
+func writeMessageQueue(conn net.Conn, messageType string, queue pigna.Queue) {
+	var msg pigna.Response = pigna.Response{
+		ResponseType: messageType,
+		QueueInfo:    queue,
+	}
 	sendToClient(conn, msg)
 }
 
 func writeMessageInt(conn net.Conn, messageType string, message int) {
-	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextInt": %d}`,
-		messageType, message)
+	var msg pigna.Response = pigna.Response{
+		ResponseType:    messageType,
+		ResponseTextInt: message,
+	}
 	sendToClient(conn, msg)
 }
 
 func writeMessageBool(conn net.Conn, messageType string, message bool) {
-	msg := fmt.Sprintf(`{"responseType": "%s", "responseTextBool": %v}`,
-		messageType, message)
+	var msg pigna.Response = pigna.Response{
+		ResponseType:     messageType,
+		ResponseTextBool: message,
+	}
 	sendToClient(conn, msg)
 }
 
-func sendToClient(conn net.Conn, message string) {
-	conn.Write([]byte(message + "\n"))
-	// log.Println(message + "\n")
+func sendToClient(conn net.Conn, message pigna.Response) {
+	encoded, _ := msgpack.Marshal(message)
+	conn.Write(append(encoded, "\n"...))
+	// log.Println(message)
+}
+
+func sendToDaemon(conn net.Conn, message MsgAction) {
+	encoded, _ := msgpack.Marshal(message)
+	conn.Write(append(encoded, "\n"...))
 }
