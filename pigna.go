@@ -347,10 +347,10 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 		var req Request = Request{
 			SenderName: senderName,
 			Action:     "sendMsg",
-			Queue: Queue {
+			Queue: Queue{
 				QueueName: q.QueueName,
 				QueueType: q.QueueType,
-				NeedsAck: q.NeedsAck,
+				NeedsAck:  q.NeedsAck,
 			},
 			Message: Message{
 				Body: encodedMessage,
@@ -365,10 +365,10 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "sendMsg",
-		Queue: Queue {
+		Queue: Queue{
 			QueueName: q.QueueName,
 			QueueType: q.QueueType,
-			NeedsAck: q.NeedsAck,
+			NeedsAck:  q.NeedsAck,
 		},
 	}
 

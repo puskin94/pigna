@@ -153,7 +153,7 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 	} else {
 
 		var validQueueTypes = map[string]bool{
-			"normal":       true,
+			"normal":     true,
 			"roundRobin": true,
 		}
 
@@ -195,11 +195,11 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 			l.Close()
 
 			var pignaQueue pigna.Queue = pigna.Queue{
-				QueueName:   msgAct.Queue.QueueName,
-				QueueType:   msgAct.Queue.QueueType,
-				NeedsAck:    msgAct.Queue.NeedsAck,
-				HostOwner:   thisHost,
-				PortOwner:   thisPort,
+				QueueName: msgAct.Queue.QueueName,
+				QueueType: msgAct.Queue.QueueType,
+				NeedsAck:  msgAct.Queue.NeedsAck,
+				HostOwner: thisHost,
+				PortOwner: thisPort,
 				ForwardConn: pigna.PignaConnection{
 					Hostname: thisHost,
 					Port:     port,

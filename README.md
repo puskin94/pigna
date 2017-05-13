@@ -93,3 +93,11 @@ This function allows you to send messages through a Pigna queue. Just specify th
 
 #### (q Queue) HasBeenAcked(messageUUID uuid.UUID) (bool, error)
 Given an `uuid.UUID` it returns if a message has been acked or not
+
+
+### Changelog
+
+#### 0.0.8
+Added basic testing
+Sending and Consuming are now on a different port
+Changed from "loadBalanced" to "roundRobin"

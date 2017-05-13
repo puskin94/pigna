@@ -141,7 +141,7 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 			broadcastToQueue(queue,
 				msgAct.Message)
 		}
-	// "roundRobin" == send messages to connections in RoundRobin mode
+		// "roundRobin" == send messages to connections in RoundRobin mode
 	} else if queue.QueueType == "roundRobin" {
 		msg := formatMessage(*queue, msgAct.Message)
 		sendToClient(queue.Consumers[queue.LastRRIdx-1].ForwardConn, msg)
