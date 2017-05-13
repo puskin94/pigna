@@ -105,3 +105,5 @@ Added basic testing
 Sending and Consuming are now on a different port
 
 Changed from "loadBalanced" to "roundRobin"
+
+Using [msgpack](https://github.com/vmihailenco/msgpack) instead of `"encoding/json"`

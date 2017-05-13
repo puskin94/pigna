@@ -2,9 +2,10 @@ package pignaDaemon
 
 import (
 	"bufio"
-	"encoding/json"
 	"log"
 	"net"
+
+	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 func createServerQueue(queue Queue, port string) {
@@ -80,7 +81,7 @@ func handleQueueRequest(conn net.Conn, forwardPort string) {
 		// log.Println(msg + "\n")
 
 		msgAct := new(MsgAction)
-		err := json.Unmarshal([]byte(msg), &msgAct)
+		err := msgpack.Unmarshal([]byte(msg), &msgAct)
 		if err != nil {
 			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
 			return
@@ -116,12 +117,6 @@ func actionAckMessage(conn net.Conn, msgAct MsgAction) {
 }
 
 func actionSendMsg(conn net.Conn, msgAct MsgAction) {
-	// isPresent, _, err := checkQueueName(msgAct.Queue)
-	// if !isPresent {
-	// 	writeMessageString(conn, "error", err.Error())
-	// 	return
-	// }
-
 	msgAct.Message.SenderConn = conn
 	msgAct.Message.SenderName = msgAct.SenderName
 
@@ -138,8 +133,7 @@ func actionSendMsg(conn net.Conn, msgAct MsgAction) {
 		if len(queue.Consumers) == 0 {
 			queue.addUnconsumedMessage(msgAct.Message)
 		} else {
-			broadcastToQueue(queue,
-				msgAct.Message)
+			broadcastToQueue(queue, msgAct.Message)
 		}
 		// "roundRobin" == send messages to connections in RoundRobin mode
 	} else if queue.QueueType == "roundRobin" {

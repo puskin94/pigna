@@ -1,8 +1,6 @@
 package pignaDaemon
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"github.com/puskin94/pigna"
 	"log"
 	"net"
@@ -148,8 +146,7 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 			PortOwner: port,
 		}
 
-		queueString, _ := json.Marshal(pignaQueue)
-		writeMessageStringEncoded(conn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
+		writeMessageQueue(conn, "success", pignaQueue)
 	} else {
 
 		var validQueueTypes = map[string]bool{
@@ -209,8 +206,7 @@ func actionCreateQueue(conn net.Conn, msgAct MsgAction) {
 			queueList.Queues[msgAct.Queue.QueueName].ServerQueue.ForwardPort = port
 			go createServerQueue(*queueList.Queues[msgAct.Queue.QueueName], port)
 
-			queueString, _ := json.Marshal(pignaQueue)
-			writeMessageStringEncoded(clientConn, "success", string(base64.StdEncoding.EncodeToString([]byte(queueString))))
+			writeMessageQueue(clientConn, "success", pignaQueue)
 
 		} else {
 			// update the local cache

@@ -2,9 +2,8 @@ package pigna
 
 import (
 	"bufio"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
+	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 	"strings"
 	"time"
@@ -13,53 +12,53 @@ import (
 )
 
 type PignaConnection struct {
-	Connection net.Conn `json:"connection,omitempty"`
-	Hostname   string   `json:"hostname,omitempty"`
-	Port       string   `json:"port,omitempty"`
+	Connection net.Conn `msgpack:",omitempty"`
+	Hostname   string   `msgpack:",omitempty"`
+	Port       string   `msgpack:",omitempty"`
 }
 
 type Response struct {
-	ResponseType              string `json:"responseType"`
-	ResponseTextString        string `json:"responseTextString"`
-	ResponseTextStringEncoded string `json:"responseTextStringEncoded"`
-	ResponseTextInt           int    `json:"responseTextInt"`
-	ResponseTextBool          bool   `json:"responseTextBool"`
-	SenderName                string `json:"senderName"`
-	QueueName                 string `json:"queueName"`
-	MsgId                     int    `json:"msgId"`
-	MsgUUID                   string `json:"UUID"`
-	NeedsAck                  bool   `json:"needsAck"`
-	IsAChunk                  bool   `json:"isAChunk"`
-	NChunk                    int    `json:"nChunk"`
-	TotalChunks               int    `json:"totalChunks"`
+	ResponseType       string
+	ResponseTextString string `msgpack:",omitempty"`
+	ResponseTextInt    int    `msgpack:",omitempty"`
+	ResponseTextBool   bool   `msgpack:",omitempty"`
+	SenderName         string `msgpack:",omitempty"`
+	QueueName          string
+	MsgId              int    `msgpack:",omitempty"`
+	MsgUUID            string `msgpack:",omitempty"`
+	NeedsAck           bool   `msgpack:",omitempty"`
+	IsAChunk           bool   `msgpack:",omitempty"`
+	NChunk             int    `msgpack:",omitempty"`
+	TotalChunks        int    `msgpack:",omitempty"`
+	QueueInfo          Queue  `msgpack:",omitempty"`
 }
 
 type Request struct {
-	SenderName string  `json:"senderName,omitempty"`
-	Action     string  `json:"action"`
-	Queue      Queue   `json:"queue,omitempty"`
-	Message    Message `json:"message,omitempty"`
+	SenderName string `msgpack:",omitempty"`
+	Action     string
+	Queue      Queue   `msgpack:",omitempty"`
+	Message    Message `msgpack:",omitempty"`
 }
 
 type Queue struct {
-	QueueName     string          `json:"queueName,omitempty"`
-	QueueType     string          `json:"queueType,omitempty"`
-	NeedsAck      bool            `json:"needsAck,omitempty"`
-	HostOwner     string          `json:"hostOwner,omitempty"`
-	PortOwner     string          `json:"portOwner,omitempty"`
-	IsConsuming   bool            `json:"isConsuming,omitempty"`
-	ConnHostOwner PignaConnection `json:"connHostOwner,omitempty"`
-	ForwardConn   PignaConnection `json:"forwardConn,omitempty"`
-	ClientConn    net.Conn        `json:"clientConn,omitempty"`
+	QueueName     string          `msgpack:",omitempty"`
+	QueueType     string          `msgpack:",omitempty"`
+	NeedsAck      bool            `msgpack:",omitempty"`
+	HostOwner     string          `msgpack:",omitempty"`
+	PortOwner     string          `msgpack:",omitempty"`
+	IsConsuming   bool            `msgpack:",omitempty"`
+	ConnHostOwner PignaConnection `msgpack:",omitempty"`
+	ForwardConn   PignaConnection `msgpack:",omitempty"`
+	ClientConn    net.Conn        `msgpack:",omitempty"`
 }
 
 type Message struct {
-	Body        string `json:"body,omitempty"`
-	UUID        string `json:"UUID,omitempty"`
-	IsAChunk    bool   `json:"isAChunk,omitempty"`
-	NChunk      int    `json:"nChunk,omitempty"`
-	TotalChunks int    `json:"totalChunks,omitempty"`
-	MsgId       int    `json:"msgId,omitempty"`
+	Body        string `msgpack:",omitempty"`
+	UUID        string `msgpack:",omitempty"`
+	IsAChunk    bool   `msgpack:",omitempty"`
+	NChunk      int    `msgpack:",omitempty"`
+	TotalChunks int    `msgpack:",omitempty"`
+	MsgId       int    `msgpack:",omitempty"`
 }
 
 var localQueueList map[string]*Queue
@@ -68,11 +67,6 @@ var senderName string
 // here will be stored the message chunks waiting to be complete
 // the key is the MsgUUID
 var chunked map[string](map[int]Response)
-
-func (req *Request) String() string {
-	reqString, _ := json.Marshal(req)
-	return string(reqString)
-}
 
 func Connect(hostname, port, sn string) (PignaConnection, error) {
 	var pignaConn PignaConnection
@@ -120,7 +114,7 @@ func (pignaConn PignaConnection) CheckQueueName(queueName string) (bool, error) 
 
 	_, isPresentLocally := localQueueList[queueName]
 
-	writeToClient(pignaConn.Connection, req.String())
+	writeToClient(pignaConn.Connection, req)
 	res, err := waitForResponse(pignaConn)
 
 	if !res.ResponseTextBool {
@@ -139,7 +133,8 @@ func (q Queue) GetNumberOfPaired() (int, error) {
 		Action:     "getNumOfPaired",
 		Queue:      q,
 	}
-	writeToClient(q.ConnHostOwner.Connection, req.String())
+
+	writeToClient(q.ConnHostOwner.Connection, req)
 	res, err := waitForResponse(q.ConnHostOwner)
 	return res.ResponseTextInt, err
 }
@@ -150,7 +145,8 @@ func (q Queue) GetNumberOfUnacked() (int, error) {
 		Action:     "getNumOfUnacked",
 		Queue:      q,
 	}
-	writeToClient(q.ConnHostOwner.Connection, req.String())
+
+	writeToClient(q.ConnHostOwner.Connection, req)
 	res, err := waitForResponse(q.ConnHostOwner)
 	return res.ResponseTextInt, err
 }
@@ -161,7 +157,8 @@ func (q Queue) GetNumberOfUnconsumed() (int, error) {
 		Action:     "getNumOfUnconsumed",
 		Queue:      q,
 	}
-	writeToClient(q.ConnHostOwner.Connection, req.String())
+
+	writeToClient(q.ConnHostOwner.Connection, req)
 	res, err := waitForResponse(q.ConnHostOwner)
 	return res.ResponseTextInt, err
 }
@@ -172,7 +169,8 @@ func (q Queue) GetNamesOfPaired() ([]string, error) {
 		Action:     "getNamesOfPaired",
 		Queue:      q,
 	}
-	writeToClient(q.ConnHostOwner.Connection, req.String())
+
+	writeToClient(q.ConnHostOwner.Connection, req)
 	res, err := waitForResponse(q.ConnHostOwner)
 	stringSlice := strings.Split(res.ResponseTextString, ",")
 
@@ -184,7 +182,8 @@ func (pignaConn PignaConnection) GetQueueNames() ([]string, error) {
 		SenderName: senderName,
 		Action:     "getQueueNames",
 	}
-	writeToClient(pignaConn.Connection, req.String())
+
+	writeToClient(pignaConn.Connection, req)
 	res, err := waitForResponse(pignaConn)
 	stringSlice := strings.Split(res.ResponseTextString, ",")
 
@@ -196,7 +195,8 @@ func (pignaConn PignaConnection) GetNumberOfQueues() (int, error) {
 		SenderName: senderName,
 		Action:     "getNumOfQueues",
 	}
-	writeToClient(pignaConn.Connection, req.String())
+
+	writeToClient(pignaConn.Connection, req)
 	res, err := waitForResponse(pignaConn)
 	return res.ResponseTextInt, err
 }
@@ -216,14 +216,13 @@ func (pignaConn PignaConnection) CreateQueue(q Queue) (Queue, error) {
 		Action:     "createQueue",
 		Queue:      q,
 	}
-	writeToClient(pignaConn.Connection, req.String())
+
+	writeToClient(pignaConn.Connection, req)
 	res, err := waitForResponse(pignaConn)
 
 	if res.ResponseType == "success" {
 
-		var newQueue Queue
-		dec, _ := base64.StdEncoding.DecodeString(res.ResponseTextStringEncoded)
-		json.Unmarshal([]byte(dec), &newQueue)
+		newQueue := res.QueueInfo
 		localQueueList[q.QueueName] = &newQueue
 
 		if newQueue.HostOwner == pignaConn.Hostname &&
@@ -260,7 +259,8 @@ func (q Queue) DestroyQueue() (Response, error) {
 		Action:     "destroyQueue",
 		Queue:      q,
 	}
-	writeToClient(q.ConnHostOwner.Connection, req.String())
+
+	writeToClient(q.ConnHostOwner.Connection, req)
 	res, err := waitForResponse(q.ConnHostOwner)
 	_, isPresent := localQueueList[q.QueueName]
 	if isPresent {
@@ -270,7 +270,6 @@ func (q Queue) DestroyQueue() (Response, error) {
 }
 
 func (q Queue) ConsumeQueue(callback func(Queue, Response)) error {
-
 	var req Request = Request{
 		SenderName: senderName,
 		Action:     "consumeQueue",
@@ -282,7 +281,7 @@ func (q Queue) ConsumeQueue(callback func(Queue, Response)) error {
 		return errors.New("This queue does not exists locally")
 	}
 
-	writeToClient(q.ForwardConn.Connection, req.String())
+	writeToClient(q.ForwardConn.Connection, req)
 	res, _ := waitForResponse(q.ForwardConn)
 
 	if res.ResponseType == "success" {
@@ -299,7 +298,7 @@ func (q Queue) RemoveConsumer() (Response, error) {
 		Queue:      q,
 	}
 
-	writeToClient(q.ConnHostOwner.Connection, req.String())
+	writeToClient(q.ConnHostOwner.Connection, req)
 	res, err := waitForResponse(q.ConnHostOwner)
 
 	_, isPresent := localQueueList[q.QueueName]
@@ -321,25 +320,25 @@ func (q Queue) HasBeenAcked(messageUUID uuid.UUID) (bool, error) {
 			UUID: messageUUID.String(),
 		},
 	}
-	writeToClient(q.ConnHostOwner.Connection, req.String())
+
+	writeToClient(q.ConnHostOwner.Connection, req)
 	res, err := waitForResponse(q.ConnHostOwner)
 	return res.ResponseTextBool, err
 }
 
 func (q Queue) SendMsg(message string) uuid.UUID {
 	maxMessageLen := 512
-	encodedMessage := base64.StdEncoding.EncodeToString([]byte(message))
-	var messageChunks = make([]string, len(encodedMessage)/maxMessageLen+1)
+	var messageChunks = make([]string, len(message)/maxMessageLen+1)
 	// Creating UUID Version 4. Only one even if the message is chunked.
 	// different chunks will have the same UUID
 	u1 := uuid.NewV4()
 	// split the message in little chunks if it is grater than `maxMessageLen`
-	if len(encodedMessage) > maxMessageLen {
-		for i := 0; i < len(encodedMessage); i += maxMessageLen {
-			if i+maxMessageLen <= len(encodedMessage) {
-				messageChunks[int(i/maxMessageLen)] = encodedMessage[i : i+maxMessageLen]
+	if len(message) > maxMessageLen {
+		for i := 0; i < len(message); i += maxMessageLen {
+			if i+maxMessageLen <= len(message) {
+				messageChunks[int(i/maxMessageLen)] = message[i : i+maxMessageLen]
 			} else {
-				messageChunks[int(i/maxMessageLen)] = encodedMessage[i:]
+				messageChunks[int(i/maxMessageLen)] = message[i:]
 			}
 		}
 	} else {
@@ -353,12 +352,12 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 				NeedsAck:  q.NeedsAck,
 			},
 			Message: Message{
-				Body: encodedMessage,
+				Body: message,
 				UUID: u1.String(),
 			},
 		}
 
-		writeToClient(q.ForwardConn.Connection, req.String())
+		writeToClient(q.ForwardConn.Connection, req)
 		return u1
 	}
 
@@ -380,7 +379,8 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 			TotalChunks: len(messageChunks),
 			UUID:        u1.String(),
 		}
-		writeToClient(q.ForwardConn.Connection, req.String())
+
+		writeToClient(q.ForwardConn.Connection, req)
 	}
 	return u1
 }
@@ -404,13 +404,13 @@ func consume(q Queue, callback func(Queue, Response)) {
 			if len(msgs[msgIdx]) == 0 {
 				continue
 			}
-			err := json.Unmarshal([]byte(msgs[msgIdx]), &response)
+			err := msgpack.Unmarshal([]byte(msgs[msgIdx]), &response)
 			if err != nil && len(msgs[msgIdx]) > 0 {
 				if msgs[msgIdx][0] == '{' {
 					broken = msgs[msgIdx]
 					continue
 				} else {
-					_ = json.Unmarshal([]byte(broken+msgs[msgIdx]), &response)
+					msgpack.Unmarshal([]byte(broken+msgs[msgIdx]), &response)
 					broken = ""
 				}
 			}
@@ -435,9 +435,6 @@ func consume(q Queue, callback func(Queue, Response)) {
 				delete(chunked, response.MsgUUID)
 			}
 
-			dec, _ := base64.StdEncoding.DecodeString(response.ResponseTextString)
-			response.ResponseTextString = string(dec[:])
-
 			if response.ResponseType == "recvMsg" {
 				if response.NeedsAck {
 					ackMessage(q.ForwardConn.Connection, response)
@@ -459,17 +456,19 @@ func ackMessage(conn net.Conn, res Response) {
 			UUID: res.MsgUUID,
 		},
 	}
-	writeToClient(conn, req.String())
+
+	writeToClient(conn, req)
 }
 
 func waitForResponse(pignaConn PignaConnection) (Response, error) {
 	var response Response
 	message, _ := bufio.NewReader(pignaConn.Connection).ReadString('\n')
-	err := json.Unmarshal([]byte(message), &response)
+	err := msgpack.Unmarshal([]byte(message), &response)
 
 	return response, err
 }
 
-func writeToClient(conn net.Conn, message string) {
-	conn.Write([]byte(message + "\n"))
+func writeToClient(conn net.Conn, message Request) {
+	encoded, _ := msgpack.Marshal(message)
+	conn.Write(append(encoded, "\n"...))
 }
