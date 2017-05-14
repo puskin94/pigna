@@ -71,7 +71,7 @@ This is a working example:
 
 ```
 func main() {
-  pignaConn, err := pigna.Connect(hostname, "16789", "config.json")
+  pignaConn, err := pigna.Connect("localhost", "16789", "senderName")
   if err != nil {
     log.Println(err.Error())
     return
