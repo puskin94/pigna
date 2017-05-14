@@ -78,10 +78,12 @@ func handleQueueRequest(conn net.Conn, forwardPort string) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		// log.Println(msg + "\n")
 
 		msgAct := new(MsgAction)
 		err := msgpack.Unmarshal([]byte(msg), &msgAct)
+
+		// log.Println(msgAct)
+
 		if err != nil {
 			writeMessageString(conn, "error", "Invalid JSON request. "+err.Error())
 			return

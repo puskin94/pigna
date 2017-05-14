@@ -54,7 +54,7 @@ type Queue struct {
 
 type Message struct {
 	Body        string `msgpack:",omitempty"`
-	UUID        string `msgpack:",omitempty"`
+	MsgUUID     string `msgpack:",omitempty"`
 	IsAChunk    bool   `msgpack:",omitempty"`
 	NChunk      int    `msgpack:",omitempty"`
 	TotalChunks int    `msgpack:",omitempty"`
@@ -317,7 +317,7 @@ func (q Queue) HasBeenAcked(messageUUID uuid.UUID) (bool, error) {
 		Action:     "hasBeenAcked",
 		Queue:      q,
 		Message: Message{
-			UUID: messageUUID.String(),
+			MsgUUID: messageUUID.String(),
 		},
 	}
 
@@ -332,34 +332,6 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 	// Creating UUID Version 4. Only one even if the message is chunked.
 	// different chunks will have the same UUID
 	u1 := uuid.NewV4()
-	// split the message in little chunks if it is grater than `maxMessageLen`
-	if len(message) > maxMessageLen {
-		for i := 0; i < len(message); i += maxMessageLen {
-			if i+maxMessageLen <= len(message) {
-				messageChunks[int(i/maxMessageLen)] = message[i : i+maxMessageLen]
-			} else {
-				messageChunks[int(i/maxMessageLen)] = message[i:]
-			}
-		}
-	} else {
-		// send as an unique message, no need to add the property to the string
-		var req Request = Request{
-			SenderName: senderName,
-			Action:     "sendMsg",
-			Queue: Queue{
-				QueueName: q.QueueName,
-				QueueType: q.QueueType,
-				NeedsAck:  q.NeedsAck,
-			},
-			Message: Message{
-				Body: message,
-				UUID: u1.String(),
-			},
-		}
-
-		writeToClient(q.ForwardConn.Connection, req)
-		return u1
-	}
 
 	var req Request = Request{
 		SenderName: senderName,
@@ -371,13 +343,33 @@ func (q Queue) SendMsg(message string) uuid.UUID {
 		},
 	}
 
+	// split the message in little chunks if it is grater than `maxMessageLen`
+	if len(message) > maxMessageLen {
+		for i := 0; i < len(message); i += maxMessageLen {
+			if i+maxMessageLen <= len(message) {
+				messageChunks[int(i/maxMessageLen)] = message[i : i+maxMessageLen]
+			} else {
+				messageChunks[int(i/maxMessageLen)] = message[i:]
+			}
+		}
+	} else {
+		// send as an unique message, no need to add the property to the string
+			req.Message = Message {
+					Body: message,
+					MsgUUID: u1.String(),
+			}
+
+		writeToClient(q.ForwardConn.Connection, req)
+		return u1
+	}
+
 	for i := 0; i < len(messageChunks); i++ {
 		req.Message = Message{
 			Body:        messageChunks[i],
 			IsAChunk:    true,
 			NChunk:      i,
 			TotalChunks: len(messageChunks),
-			UUID:        u1.String(),
+			MsgUUID:        u1.String(),
 		}
 
 		writeToClient(q.ForwardConn.Connection, req)
@@ -453,7 +445,7 @@ func ackMessage(conn net.Conn, res Response) {
 			QueueName: res.QueueName,
 		},
 		Message: Message{
-			UUID: res.MsgUUID,
+			MsgUUID: res.MsgUUID,
 		},
 	}
 

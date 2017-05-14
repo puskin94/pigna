@@ -176,10 +176,10 @@ func handleRequest(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		msg := scanner.Text()
-		// log.Println(msg)
 
 		msgAct := new(MsgAction)
 		err := msgpack.Unmarshal([]byte(msg), &msgAct)
+		// log.Println(msgAct)
 		if err != nil {
 			writeMessageString(conn, "error", "Invalid msgpack request. "+err.Error())
 			return
