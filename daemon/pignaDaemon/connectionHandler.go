@@ -179,7 +179,7 @@ func handleRequest(conn net.Conn) {
 
 		msgAct := new(MsgAction)
 		err := msgpack.Unmarshal([]byte(msg), &msgAct)
-		// log.Println(msgAct)
+		log.Println(msgAct)
 		if err != nil {
 			writeMessageString(conn, "error", "Invalid msgpack request. "+err.Error())
 			return
@@ -203,13 +203,12 @@ func (q *Queue) deleteConsumer(clIdx int) []Client {
 
 func broadcastToQueue(q *Queue, message Message) {
 	// send the body to all the Consumers connections
-	for idx, _ := range q.Consumers {
+	for _, cons := range q.Consumers {
 		msg := formatMessage(*q, message)
 		if q.NeedsAck {
 			q.UnackedMessages = append(q.UnackedMessages, message)
 		}
-		// log.Println(q.UnackedMessages)
-		sendToClient(q.Consumers[idx].ForwardConn, msg)
+		sendToClient(cons.ForwardConn, msg)
 	}
 }
 
@@ -357,7 +356,7 @@ func writeMessageBool(conn net.Conn, messageType string, message bool) {
 func sendToClient(conn net.Conn, message pigna.Response) {
 	encoded, _ := msgpack.Marshal(message)
 	conn.Write(append(encoded, "\n"...))
-	// log.Println(message)
+	log.Println(message)
 }
 
 func sendToDaemon(conn net.Conn, message MsgAction) {

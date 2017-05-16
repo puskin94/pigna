@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"time"
+	"log"
 
 	"github.com/satori/go.uuid"
 )
@@ -277,7 +278,7 @@ func (q Queue) ConsumeQueue(callback func(Queue, Response)) error {
 	}
 
 	_, isPresent := localQueueList[q.QueueName]
-	if !isPresent {
+	if !isPresent || q.ForwardConn.Connection == nil {
 		return errors.New("This queue does not exists locally")
 	}
 
@@ -381,30 +382,31 @@ func consume(q Queue, callback func(Queue, Response)) {
 	chunkSize := 1024
 	broken := ""
 	for localQueueList[q.QueueName].IsConsuming {
-		var response Response
 
 		var buffer = make([]byte, chunkSize)
-		readLen, err := q.ForwardConn.Connection.Read(buffer)
+		readLen, err:= q.ForwardConn.Connection.Read(buffer)
 
-		if err != nil {
-			break
-		}
 		buffer = buffer[:readLen]
-		msgs := strings.Split(string(buffer[:readLen]), "\n")
+		msgs := strings.Split(string(buffer), "\n\t")
+		// msgs := strings.FieldsFunc(string(buffer), func (r rune) bool {
+		// 	return r == '\n' || r == '\t'
+		// })
 
 		for msgIdx := 0; msgIdx < len(msgs); msgIdx++ {
 			if len(msgs[msgIdx]) == 0 {
 				continue
 			}
-			err := msgpack.Unmarshal([]byte(msgs[msgIdx]), &response)
-			if err != nil && len(msgs[msgIdx]) > 0 {
-				if msgs[msgIdx][0] == '{' {
+			var response Response
+			err = msgpack.Unmarshal([]byte(msgs[msgIdx]), &response)
+			log.Println(msgs[msgIdx])
+			if err != nil {
+				if broken == "" {
 					broken = msgs[msgIdx]
-					continue
-				} else {
-					msgpack.Unmarshal([]byte(broken+msgs[msgIdx]), &response)
-					broken = ""
+					// not breaking here but after the for loop has better performances
+					break
 				}
+				msgpack.Unmarshal([]byte(broken+msgs[msgIdx]), &response)
+				broken = ""
 			}
 
 			// check if the received message is a part of a bigger one
